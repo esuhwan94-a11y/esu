@@ -234,7 +234,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       </div>
       <div class="jarvis">
         <div class="jout" id="jout" hidden>
-          <div class="jhead">J.A.R.V.I.S · 응답<button id="jclose">닫기</button></div>
+          <div class="jhead">J.A.R.V.I.S · 응답 · r21<button id="jclose">닫기</button></div>
           <p class="jsay" id="jsay"></p>
           <div class="jres" id="jres"></div>
         </div>
@@ -723,7 +723,9 @@ function say(text, html, action) {
 /* ---------- live mail and calendar through the viewer's own connectors ---------- */
 let mcp = null, mailList = [], pendingDel = [];
 const GM = 'Gmail', GC = 'Google Calendar', pad2 = n => String(n).padStart(2, '0'), DOW = '일월화수목금토';
-async function conn(server, tool, input) { if (!mcp) throw { code: 'no_mcp' }; const r = await mcp.callTool(server, tool, input); let p = r && r.payload !== undefined ? r.payload : r; if (typeof p === 'string') { try { p = JSON.parse(p); } catch (e) {} } return p || {}; }
+async function conn(server, tool, input) { if (!mcp) throw { code: 'no_mcp' }; const r = await mcp.callTool(server, tool, input);
+  let p = r == null ? {} : r.payload !== undefined && r.payload !== null ? r.payload : r.structuredContent !== undefined && r.structuredContent !== null ? r.structuredContent : Array.isArray(r.content) ? r.content.map(c => (c && c.text) || '').join('\n') : r;
+  if (typeof p === 'string') { try { p = JSON.parse(p); } catch (e) {} } return p == null ? {} : p; }
 function connErr(e, server, writing) { const c = e && e.code; setBusy(false);
   say(c === 'no_mcp' ? `${server} 연결은 claude.ai 링크로 열었을 때만 됩니다. 지금 화면에서는 쓸 수 없습니다.`
     : c === 'needs_reauth' ? `${server} 연결이 만료됐습니다. claude.ai 설정의 커넥터에서 ${server}를 다시 연결해 주세요.`
@@ -732,6 +734,7 @@ function connErr(e, server, writing) { const c = e && e.code; setBusy(false);
     : c === 'approval_required' ? `${server}를 쓰려면 허용이 필요합니다. 다시 요청하고 뜨는 창에서 허용해 주세요.`
     : c === 'blocked_by_policy' ? `조직 설정에서 이 ${server} 기능을 막아 두었습니다.`
     : c === 'selection_required' ? `${server} 계정이 여러 개 연결돼 있습니다. 뜨는 창에서 하나를 골라 주세요.`
+    : c === 'parse' ? `${server}에서 답은 받았는데 형식을 읽지 못했습니다. 이 문구를 알려주세요: ${(e.message || '').slice(0, 120)}`
     : writing ? `${server}에서 답을 받지 못했습니다. 처리됐는지 확실하지 않으니 목록을 다시 확인해 주세요.`
     : c === 'tool_error' ? `${server}가 요청을 처리하지 못했습니다. ${(e.message || '').slice(0, 80)}` : `${server}에서 답을 받지 못했습니다. 잠시 뒤 다시 시도해 주세요.`); }
 const setBusy = on => $('#jbar').classList.toggle('busy', on);
@@ -787,7 +790,10 @@ async function calCheck(q) { setFocus(null); const n = new Date(), d0 = new Date
 /* ---------- live shipping jobs (read-only SELECT), Drive search and Slack through the viewer's connectors ---------- */
 const SB = 'Supabase', SBP = 'bwvopnybgqfagsfuhxvg', DR = 'Google Drive', SL = 'Slack', KABCAL = '5372ecbbc8505cdf1890a2d3fc6d23f3a574ffedb15c57dc3967196a6160176a@group.calendar.google.com';
 const SLCH = [['요청사항', 'C0CAULPQGRM'], ['kab', 'C0CB4P7BZ7X'], ['출고', 'C0CB4PH4P8V'], ['kab-업무일정', 'C0CBEUH3HT6'], ['kab-대리점-알림', 'C0CAVFU3G9M'], ['kab-타타대우-알림', 'C0CC58P4E48'], ['kab-관리자-알림', 'C0CC58P164Q']];
-async function sql(query) { const p = await conn(SB, 'execute_sql', { project_id: SBP, query }), txt = String(typeof p === 'string' ? p : (p.result || '')), m = txt.match(/<untrusted-data-[^>]+>\s*([\s\S]*?)\s*<\/untrusted-data/); try { const v = JSON.parse(m ? m[1] : txt); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+async function sql(query) { const p = await conn(SB, 'execute_sql', { project_id: SBP, query }); if (Array.isArray(p)) return p;
+  const txt = typeof p === 'string' ? p : typeof p.result === 'string' ? p.result : JSON.stringify(p), m = txt.match(/<untrusted-data-[^>]+>\s*([\s\S]*?)\s*<\/untrusted-data/);
+  for (const cand of [m && m[1], txt, (txt.match(/\[[\s\S]*\]/) || [])[0]]) { if (!cand) continue; try { let v = JSON.parse(cand); if (typeof v === 'string') v = JSON.parse(v); if (Array.isArray(v)) return v; if (v && Array.isArray(v.rows)) return v.rows; } catch (e) {} }
+  throw { code: 'parse', message: txt.slice(0, 160) }; }
 const pgDate = v => v ? mdate(String(v).replace(' ', 'T').replace(/\+00$/, 'Z')) : '';
 const jobState = j => j.shipped_at ? '출고완료' : j.dispatched_at ? '배차됨' : j.ready_at ? '출고준비완료' : '준비 전';
 async function shipCheck(q) { setFocus(null);
@@ -801,7 +807,7 @@ async function shipCheck(q) { setFocus(null);
   try { let rows = await sql(query);
     if (!rows.length && kw.length) { rows = await sql(pending); extra = ` “${kw.join(' ')}”로는 찾지 못해 출고준비 목록 전체를 보여드립니다.`; label = '대리점 출고준비 목록'; prep = true; }
     setBusy(false);
-    if (!rows.length) { say(`${label} 건이 없습니다.`); return; }
+    if (!rows.length) { say(prep ? '출하 데이터는 정상으로 읽었고, 지금 출고준비 목록에 남은 건이 0건입니다.' : `${label} 건이 없습니다.`); return; }
     const cnt = {}; rows.forEach(j => { const st = jobState(j); cnt[st] = (cnt[st] || 0) + 1; }); const names = [...new Set(rows.map(j => j.company))], due = j => (String(j.note || '').match(/납기\s*(\d{1,2}\/\d{1,2})/) || [])[1];
     const row = j => `<div class="sk"><b>${esc(j.company)} <small>${jobState(j)}${j.shipping_mode ? ' · ' + esc(j.shipping_mode) : ''}${j.payment ? ' ' + esc(j.payment) : ''}${j.pallets ? ' · ' + j.pallets + 'P' : ''}${due(j) ? ' · 납기 ' + due(j) : ''}</small></b><small>${esc(String(j.note || '').slice(0, 200))}<br>등록 ${pgDate(j.created_at)}${j.ready_at ? ' · 준비 ' + pgDate(j.ready_at) : ''}${j.shipped_at ? ' · 출고 ' + pgDate(j.shipped_at) : ''}</small></div>`;
     if (prep) { const todo = rows.filter(j => !j.ready_at), wait = rows.filter(j => j.ready_at);
@@ -945,6 +951,7 @@ function ask(raw) {
   const open = q.match(/^(.+?)\s*(?:열어 ?줘|열기|열어)$/);
   const { tk, hits } = search(open ? open[1] : q);
   if (open && hits.length) { setFocus(new Set([hits[0].n.id])); openNote(hits[0].n.id); say(`「${hits[0].n.title}」을 열었습니다.`); return; }
+  if (!hits.length && mcp && /(대리점|작업|출고|출하|할 ?일|준비|배차)/.test(q)) { shipCheck(q); return; }
   if (!hits.length) { setFocus(null);
     say(db.notes.length ? `“${q}”와 맞는 기록을 찾지 못했습니다. 지금 바로 남겨 둘까요?` : '아직 저장된 노트가 없습니다. 이 내용으로 첫 노트를 만들까요?', '', { label:'이 내용으로 새 노트', run:() => openNote(newNote(q, '', 'idea').id, true) }); return; }
   lastQ = q; const ids = new Set(hits.map(h => h.n.id)); tk.filter(t => t[0] === '#' && nodeById.has(t)).forEach(t => ids.add(t));
