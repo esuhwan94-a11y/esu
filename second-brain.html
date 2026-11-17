@@ -770,7 +770,18 @@ function ask(raw) {
   const q = raw.trim(); if (!q) return; show('graph'); $('#jq').value = '';
   const bar = $('#jbar'); bar.classList.add('busy'); setTimeout(() => bar.classList.remove('busy'), 900); blip(620, 1240, .14); setTimeout(() => blip(1240, 1860, .2, .03), 160);
   let m;
-  if (/^(잠가|잠금|잠그기|다시 잠)/.test(q)) { relock(); say('중요 노트를 다시 잠갔습니다.'); return; }
+  if (/^(잠가|잠금|잠그기|다시 잠)/.test(q) && !/(풀어|해제|없애)/.test(q)) { relock(); say('중요 노트를 다시 잠갔습니다.'); return; }
+  const topicNotes = t => { const tk = tokens(t).map(x => x.replace('#', '')); return tk.length ? db.notes.filter(n => tk.some(k => n.title.toLowerCase().includes(k) || n.tags.some(g => g.toLowerCase().includes(k)))) : []; };
+  if ((m = q.match(/^(.*?)(?:에\s*(?:대한|관한|대해서?)|\s*관련(?:된)?)?\s*(?:거|것|건|노트|자료|내용)?(?:는|은|을|를)?\s*(?:잠금|비밀번호)(?:을|를)?\s*(?:다\s*|전부\s*|모두\s*)?(?:풀어|해제|없애)/))) { // bulk unlock
+    const topic = m[1].replace(/(다|전부|모두|싹)\s*$/, '').trim(), list = (topic ? topicNotes(topic) : db.notes).filter(n => n.locked);
+    if (!list.length) { say(topic ? `“${topic}” 쪽에는 잠긴 노트가 없습니다.` : '잠긴 노트가 없습니다.'); return; }
+    const undo = () => { list.forEach(n => { n.locked = false; }); save(); refresh(); say(`${topic ? '“' + topic + '” 관련 ' : ''}노트 ${list.length}개의 잠금을 풀었습니다.`); };
+    if (!unlocked && db.pw) lockDialog('unlock', undo); else undo(); return; }
+  if ((m = q.match(/^(.+?)(?:에\s*(?:대한|관한|대해서?)|\s*관련(?:된)?)?\s*(?:거|것|건|노트|자료|내용)?(?:는|은|을|를)?\s*(?:다|전부|모두|싹\s*다|싹|전체)\s*(?:비밀번호|잠가|잠궈|잠금|잠그)/))) { // bulk lock by topic
+    const topic = m[1].trim(), list = topicNotes(topic).filter(n => !n.locked);
+    if (!list.length) { say(`“${topic}”에 해당하는 잠글 노트를 찾지 못했습니다. 제목이나 태그에 그 단어가 있는 노트만 잠급니다.`); return; }
+    const mark = () => { list.forEach(n => { n.locked = true; }); save(); refresh(); say(`“${topic}” 관련 노트 ${list.length}개를 잠갔습니다. 열 때 비밀번호를 묻습니다.`, `<div class="jcard"><p>${esc(list.slice(0, 12).map(n => n.title).join(' · '))}${list.length > 12 ? ' 외 ' + (list.length - 12) + '개' : ''}</p><p class="jmeta">되돌리려면 “${esc(topic)} 잠금 풀어줘”라고 하거나 보관함의 “잠글 노트 고르기”에서 체크를 빼세요.</p></div>`); setFocus(new Set(list.map(n => n.id))); };
+    if (!db.pw) lockDialog('set', mark); else mark(); return; }
   if ((m = q.match(/^(.+?)\s*(?:중요 ?표시|중요해|중요하다|잠가 ?줘|잠금해 ?줘)$/))) { const hit = search(m[1]).hits[0];
     if (!hit) { say(`“${m[1]}”와 맞는 노트를 찾지 못했습니다.`); return; }
     const mark = () => { hit.n.locked = true; save(); refresh(); say(`「${hit.n.title}」을 중요 노트로 잠갔습니다. 열 때 비밀번호를 묻습니다.`); setFocus(new Set([hit.n.id])); };
