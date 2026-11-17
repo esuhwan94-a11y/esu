@@ -466,7 +466,7 @@ function draw(ts) {
   ctx.strokeStyle = ACC;
   for (const [r, w, sp, segs, al] of RINGS) { ctx.lineWidth = w * clamp(cs, .7, 1.5); ctx.globalAlpha = al * dim; for (const [s0, l] of segs) arc(cx, cy, r * cs, s0 + t*sp, s0 + l + t*sp); }
   // voice ring: reacts while Jarvis is answering
-  talk += ((talking || (window.speechSynthesis && speechSynthesis.speaking) ? 1 : 0) - talk) * .12;
+  talk += ((talking || ttsOn || (window.speechSynthesis && speechSynthesis.speaking) ? 1 : 0) - talk) * .12;
   if (talk > .02) { ctx.strokeStyle = ACCHI; ctx.lineWidth = 2;
     for (let i = 0; i < 90; i++) { const a = i * .0698, h = (4 + 30 * Math.abs(Math.sin(i * 1.7 + t * 9) * Math.sin(i * .37 + t * 5.3))) * talk * cs, r0 = 104 * cs; ctx.globalAlpha = .85 * talk; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a)*r0, cy + Math.sin(a)*r0); ctx.lineTo(cx + Math.cos(a)*(r0 + h), cy + Math.sin(a)*(r0 + h)); ctx.stroke(); } }
   const pr = (1 + .07 * Math.sin(t * 2.4) + .12 * talk * Math.abs(Math.sin(t * 11))) * cs; glow(ACC, cx, cy, 95 * pr, focus ? .45 : .9); glow(ACCHI, cx, cy, 40 * pr, focus ? .6 : 1);
@@ -668,7 +668,7 @@ function applySelect() { const done = () => { db.notes.forEach(n => { n.locked =
 $('#v-lock').onclick = $('#b-pick').onclick = startSelect; $('#vsel-ok').onclick = applySelect; $('#vsel-no').onclick = () => { selMode = false; renderVault(); };
 function fillVoices() { const sel = $('#voice'); let pref = ''; try { pref = localStorage.getItem('sb-voice') || ''; } catch (e) {}
   const vs = 'speechSynthesis' in window ? speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)) : [];
-  sel.innerHTML = '<option value="">목소리 자동 (한국어 여성 우선)</option>' + vs.map(v => `<option value="${esc(v.name)}"${v.name === pref ? ' selected' : ''}>${esc(v.name)}</option>`).join(''); }
+  sel.innerHTML = '<option value="">목소리 자동</option>' + (ctts ? ['buttery', 'airy', 'glassy', 'rounded'].map(v => `<option value="claude:${v}"${pref === 'claude:' + v ? ' selected' : ''}>Claude 음성 · ${v}</option>`).join('') : '') + vs.map(v => `<option value="${esc(v.name)}"${v.name === pref ? ' selected' : ''}>${esc(v.name)}</option>`).join(''); }
 $('#voice').onchange = e => { try { localStorage.setItem('sb-voice', e.target.value); } catch (x) {} };
 $('#voice-test').onclick = () => { const was = voiceOn; voiceOn = true; speak('안녕하세요. 자비스입니다. 무엇을 찾아드릴까요?'); voiceOn = was; };
 $('#b-pw').onclick = () => { $('#settings').hidden = true; if (db.pw && !unlocked) lockDialog('unlock', () => lockDialog('set')); else lockDialog('set'); };
@@ -694,10 +694,13 @@ function snippet(n, tk) {
   let h = esc(cut); tk.forEach(t => { const w = esc(t.replace('#', '')); if (w) h = h.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), m => `<mark>${m}</mark>`); });
   return h;
 }
-let voiceOn = true, typeT, actx, lastQ = '';
+let voiceOn = true, typeT, actx, lastQ = '', dict = null, ctts = null, ttsOn = false;
 function blip(f0, f1, d, v) { if (!voiceOn) return; try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const o = actx.createOscillator(), g = actx.createGain(), n = actx.currentTime;
   o.type = 'sine'; o.frequency.setValueAtTime(f0, n); o.frequency.exponentialRampToValueAtTime(f1, n + d); g.gain.setValueAtTime(v || .05, n); g.gain.exponentialRampToValueAtTime(.0001, n + d); o.connect(g); g.connect(actx.destination); o.start(n); o.stop(n + d); } catch (e) {} }
-function speak(text) { if (!voiceOn || !('speechSynthesis' in window)) return; try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/[「」“”#]/g, ' ')); u.lang = 'ko-KR'; u.rate = 1.02; u.pitch = 1.05; const vs = speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)); let pref = ''; try { pref = localStorage.getItem('sb-voice') || ''; } catch (x) {} const fv = vs.find(v => v.name === pref) || vs.find(v => /female|yuna|sora|heami|sun-?hi|seoyeon|여/i.test(v.name)) || vs[0]; if (fv) u.voice = fv; speechSynthesis.speak(u); } catch (e) {} }
+function speak(text) { if (!voiceOn) return; let vp = ''; try { vp = localStorage.getItem('sb-voice') || ''; } catch (e) {}
+  if (ctts && (!vp || vp.startsWith('claude:'))) { // Claude voice when the viewer offers it
+    ctts.speak(text.replace(/[「」“”#]/g, ' ').slice(0, 1900), { voice: vp.slice(7) || 'buttery', language: 'ko' }).catch(e => { if (e && (e.code === 'not_granted' || e.code === 'unavailable')) ctts = null; }); return; }
+  if (!('speechSynthesis' in window)) return; try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/[「」“”#]/g, ' ')); u.lang = 'ko-KR'; u.rate = 1.02; u.pitch = 1.05; const vs = speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)); let pref = ''; try { pref = localStorage.getItem('sb-voice') || ''; } catch (x) {} const fv = vs.find(v => v.name === pref) || vs.find(v => /female|yuna|sora|heami|sun-?hi|seoyeon|여/i.test(v.name)) || vs[0]; if (fv) u.voice = fv; speechSynthesis.speak(u); } catch (e) {} }
 function say(text, html, action) {
   const out = $('#jout'), p = $('#jsay'); out.hidden = false; $('#hints').hidden = true; $('#jres').innerHTML = html || '';
   if (action) { const b = document.createElement('button'); b.className = 'jact'; b.textContent = action.label; b.onclick = action.run; $('#jres').append(b); }
@@ -817,9 +820,11 @@ function ask(raw) {
 $('#jbar').addEventListener('submit', e => { e.preventDefault(); ask($('#jq').value); });
 $('#hints').addEventListener('click', e => { if (e.target.tagName === 'BUTTON') ask(e.target.textContent); });
 $('#jclose').onclick = () => { $('#jout').hidden = true; talking = false; lastQ = ''; clearInterval(typeT); setFocus(null); fit(); try { speechSynthesis.cancel(); } catch (e) {} };
-$('#jvoice').onclick = e => { voiceOn = !voiceOn; e.currentTarget.classList.toggle('on', voiceOn); if (!voiceOn) try { speechSynthesis.cancel(); } catch (x) {} toast(voiceOn ? '음성 답변을 켰습니다.' : '음성 답변을 껐습니다.'); };
+$('#jvoice').onclick = e => { voiceOn = !voiceOn; e.currentTarget.classList.toggle('on', voiceOn); if (!voiceOn) { try { speechSynthesis.cancel(); } catch (x) {} if (ctts) ctts.stop(); } toast(voiceOn ? '음성 답변을 켰습니다.' : '음성 답변을 껐습니다.'); };
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null;
 $('#jmic').onclick = () => {
+  if (dict) { if (dict.active()) { dict.stop().catch(() => {}); return; }
+    dict.start({ language: 'ko' }).catch(e => { $('#jmic').classList.remove('rec'); toast(e && e.code === 'not_granted' ? '마이크 사용을 허용하지 않아 글로만 입력됩니다.' : e && e.code === 'dismissed' ? '마이크 허용 창이 닫혔습니다. 다시 눌러 주세요.' : '지금은 음성 입력을 쓸 수 없습니다. 글로 입력해 주세요.'); }); return; }
   if (!SR) return toast('이 브라우저는 음성 입력을 지원하지 않습니다. 글로 입력해 주세요.');
   if (rec) { rec.stop(); return; }
   try { rec = new SR(); rec.lang = 'ko-KR'; rec.interimResults = true;
@@ -843,6 +848,15 @@ $('#b-load').onclick = () => { try { const d = JSON.parse($('#backup').value); i
   save(); setFocus(null); refresh(); $('#settings').hidden = true; toast('노트 ' + db.notes.length + '개를 복원했습니다.'); } catch (e) { toast('백업 형식이 맞지 않습니다. 복사한 내용을 그대로 붙여넣어 주세요.'); } };
 $('#b-wipe').onclick = e => { const b = e.currentTarget; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = '정말 전부 지울까요?'; return; }
   delete b.dataset.sure; b.textContent = '전부 비우기'; db = { notes:[], sample:false }; save(); setFocus(null); refresh(); $('#settings').hidden = true; toast('볼트를 비웠습니다.'); };
+
+/* ---------- viewer capabilities: microphone dictation and Claude voice (absent outside claude.ai) ---------- */
+if (window.claude && window.claude.use) {
+  window.claude.use('dictation').then(d => { if (!d) return; dict = d;
+    d.onPartial(e => { $('#jq').value = e.text; });
+    d.onFinal(e => { const t = (e.text || '').trim(); if (t) { d.stop().catch(() => {}); ask(t); } });
+    d.onState(e => { $('#jmic').classList.toggle('rec', e.state === 'listening' || e.state === 'starting'); if (e.state === 'idle' && e.reason === 'unavailable') toast('이 기기에서는 한국어 받아쓰기를 쓸 수 없습니다. 글로 입력해 주세요.'); }); }).catch(() => {});
+  window.claude.use('tts').then(t => { if (!t) return; ctts = t; t.onState(e => { ttsOn = e.state === 'speaking'; }); }).catch(() => {});
+}
 
 /* ---------- boot ---------- */
 load(); resize(); refresh();
