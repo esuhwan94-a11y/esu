@@ -247,7 +247,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
           <div class="jres" id="jres"></div>
         </div>
         <div class="hints" id="hints">
-          <button>대리점 출고준비 목록</button><button>메일 확인해줘</button><button>이번 달 일정 뭐 있지?</button><button>사내 재고 웹 만들려는데 어떤 스킬?</button><button>내일 견적서 보내기 메모해줘</button>
+          <button>내일 대리점 작업목록</button><button>메일 확인해줘</button><button>이번 달 일정 뭐 있지?</button><button>사내 재고 웹 만들려는데 어떤 스킬?</button><button>내일 견적서 보내기 메모해줘</button>
         </div>
         <form class="jbar" id="jbar">
           <span class="orb" aria-hidden="true"></span>
@@ -799,7 +799,7 @@ async function sql(query) { const p = await conn(SB, 'execute_sql', { project_id
 const pgDate = v => v ? mdate(String(v).replace(' ', 'T').replace(/\+00$/, 'Z')) : '';
 const jobState = j => j.shipped_at ? '출고완료' : j.dispatched_at ? '배차됨' : j.ready_at ? '출고준비완료' : '준비 전';
 async function shipCheck(q) { setFocus(null);
-  const kw = tokens(q).filter(t => !/(출고|출하|지시|현황|대기|남은|남았|업체|어디|뭐|무슨|어떤|있|알려|보여|확인|오늘|내일|모레|어제|이번|다음|금주|요일|완료|준비|배차|목록|지금|아직|해줘|나갈|나가|보낼|좀|^건$|^거$|^것$|^주$)/.test(t)).map(t => t.replace(/[^0-9a-zA-Z가-힣()㈜]/g, '')).filter(t => t.length >= 2);
+  const kw = tokens(q).filter(t => !/(출고|출하|지시|현황|대기|남은|남았|업체|어디|뭐|무슨|어떤|있|알려|보여|확인|오늘|내일|모레|어제|이번|다음|금주|요일|완료|준비|배차|목록|지금|아직|해줘|나갈|나가|보낼|대리점|작업|목록|리스트|할일|해야|말해|좀|^건$|^거$|^것$|^주$|^할$|^일$)/.test(t)).map(t => t.replace(/[^0-9a-zA-Z가-힣()㈜]/g, '')).filter(t => t.length >= 2);
   const done = /완료/.test(q) && !/준비/.test(q), cols = 'company, note, pallets, shipping_mode, payment, created_at, ready_at, dispatched_at, shipped_at', day = "date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul'";
   const pending = `select ${cols} from public.jobs where shipped_at is null order by (ready_at is not null), created_at desc limit 60`; let query = pending, label = '대리점 출고준비 목록', extra = '', prep = true;
   if (kw.length) { query = `select ${cols} from public.jobs where ${kw.map(k => `company ilike '%${k}%' or note ilike '%${k}%'`).join(' or ')} order by created_at desc limit 40`; label = `“${kw.join(' ')}” 출고`; prep = false; }
@@ -943,7 +943,7 @@ function ask(raw) {
   if (/(일정|캘린더|스케줄|약속)/.test(q) && /(뭐|알려|보여|확인|있지|있어|있나|읽어|체크)/.test(q) && !/(메모|노트|채널|찾아)/.test(q)) { calCheck(q); return; }
   if (/(슬랙|slack)/i.test(q) && /(확인|읽어|보여|뭐|알려|왔|있어|체크)/.test(q) && !/(메모|노트)/.test(q)) { slackCheck(q); return; }
   if (/드라이브/.test(q) && /(찾아|검색|어디|있어|보여)/.test(q)) { driveSearch(q); return; }
-  if (/(출고|출하|배차)/.test(q) && /(지시|현황|대기|남은|업체|어디|뭐|있|알려|보여|확인|완료|건|나갈|예정|말해|준비|대리점|목록|리스트)/.test(q) && !/(메모해|노트|기록|찾아|메일|관련|있었)/.test(q)) { shipCheck(q); return; }
+  if (/(출고|출하|배차|대리점|작업 ?목록|작업 ?리스트|할 ?일|해야 ?할)/.test(q) && /(지시|현황|대기|남은|업체|어디|뭐|있|알려|보여|확인|완료|건|나갈|예정|말해|준비|대리점|목록|리스트|작업|할 ?일|내일|오늘)/.test(q) && !/(메모해|노트|기록|찾아|메일|관련|있었|스킬)/.test(q)) { shipCheck(q); return; }
   if (/스킬/.test(q) && /(추천|어떤|뭐|무슨|쓰면|써야|사용하|사용해|배열|골라|필요)/.test(q)) { advise(q); return; }
   if (/^(전체|리셋|초기화|전체 ?보기|처음으로)/.test(q)) { setFocus(null); $('#jout').hidden = true; fit(); say('전체 그래프로 돌아왔습니다. 노트 ' + db.notes.length + '개가 연결되어 있습니다.'); return; }
   if ((m = q.match(/^(?:새 ?노트|메모|기록)\s*[:：]?\s+(.+)/)) || (m = q.match(/^(.+?)\s*(?:라고|이라고)?\s*(?:메모해 ?줘|기록해 ?줘|적어 ?줘|저장해 ?줘|메모)$/))) {
