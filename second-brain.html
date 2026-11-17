@@ -861,6 +861,9 @@ const AI_TOOLS = [
  { name: 'slack_recent', description: 'KAB 슬랙 채널의 최근 메시지를 읽는다. channel: 요청사항, kab, 출고, kab-업무일정, kab-대리점-알림, kab-타타대우-알림, kab-관리자-알림 중 하나.',
    inputSchema: { type: 'object', properties: { channel: { type: 'string' } }, required: ['channel'] },
    execute: async i => { const c = SLCH.find(x => x[0] === String(i.channel)) || SLCH.find(x => x[0].includes(String(i.channel).replace('#', ''))) || SLCH[1]; try { const p = await conn(SL, 'slack_read_channel', { channel_id: c[1], limit: 8, response_format: 'concise' }); return ('#' + c[0] + '\n' + String(p.messages || '').replace(/\s*<[^>]*@slack-bots\.com>/g, '')).slice(0, 2500); } catch (e) { toolFail(e, 'Slack'); } } },
+ { name: 'skill_catalog', description: '사용자가 가진 Claude 스킬 전체 목록에서 작업 설명에 맞는 스킬을 찾아 이름, 묶음, 한 줄 설명을 돌려준다. "이 작업에 어떤 스킬을 쓰면 좋을까" 같은 질문이나 특정 스킬이 무엇인지 물을 때 쓴다.',
+   inputSchema: { type: 'object', properties: { task: { type: 'string', description: '하려는 작업이나 스킬 이름' } }, required: ['task'] },
+   execute: i => { const m = matchSkills(String(i.task || ''), 20); return { total_skills: allSkills().length, matches: m.length ? m.map(k => ({ name: k.name, group: k.group, plugin: k.plugin, desc: k.desc })) : '일치하는 스킬 없음' }; } },
  { name: 'drive_search', description: '구글 드라이브에서 파일을 검색해 이름, 수정일, 링크를 돌려준다. 원본 파일 위치를 물을 때 쓴다.',
    inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
    execute: async i => { try { const kw = String(i.query || '').replace(/['\\]/g, ' ').trim(), p = await conn(DR, 'search_files', { query: `fullText contains '${kw}'`, pageSize: 8, excludeContentSnippets: true }); return (p.files || []).length ? p.files.map(f => ({ title: f.title, modified: f.modifiedTime, url: f.viewUrl })) : '파일 없음'; } catch (e) { toolFail(e, '드라이브'); } } },
@@ -950,17 +953,25 @@ const SK_MISS = [ // candidates the user does not have; names to verify with fin
 const SK_GAP = [[/인스타|sns|페이스북|블로그 마케팅/i, 'SNS·마케팅', 'social media marketing'], [/seo|검색 노출|블로그/i, '검색 노출·블로그', 'seo'],
  [/회계|세금|부가세|정산/, '회계·정산', 'accounting'], [/번역|영문|영어로/, '번역', 'translation'], [/배포|netlify|vercel|도메인/i, '배포', 'deploy'], [/안드로이드|아이폰|모바일 앱|플레이스토어/, '모바일 앱', 'react native'], [/크롤|수집|스크랩/, '웹 자료 수집', 'web scraping']];
 let advPrompt = '';
+const allSkills = () => (window.VAULT_PACK && Array.isArray(window.VAULT_PACK.skills)) ? window.VAULT_PACK.skills : [];
+function matchSkills(text, max) { // full catalog from the dashboard: match the task words against each skill's name and description
+  const tk = tokens(text).map(t => t.replace('#', '')).filter(t => t.length >= 2 && !/(스킬|추천|어떤|무슨|쓰면|써야|사용|좋을|하려|할려|만들려|할건데|만들건데|작업|이거|저거|해줘|알려)/.test(t));
+  if (!tk.length) return [];
+  return allSkills().map(k => { const hay = (k.name + ' ' + (k.desc || '') + ' ' + (k.plugin || '')).toLowerCase(); return { k, s: tk.filter(t => hay.includes(t)).length }; }).filter(x => x.s).sort((a, b) => b.s - a.s).slice(0, max || 8).map(x => x.k); }
 function advise(q) {
   const task = q.replace(/(어떤|무슨|뭐|뭘|어느)?\s*스킬.*$/, '').replace(/(을|를)?\s*(작업)?\s*(하려는데|할려는데|할려하는데|하려고 하는데|하려고|하려면|할 건데|할건데|할 때|하는데|만들려는데|만들건데)\s*$/, '').trim(), low = q.toLowerCase().replace(/스킬/g, '');
   if (task.length < 2) { say('어떤 작업인지 같이 적어 주세요. 예: “사내 재고 웹 만들려는데 어떤 스킬?”'); return; }
   const score = kw => kw.split('|').filter(k => low.includes(k)).length;
   const own = SK.map(r => ({ r, s: score(r[2]) })).filter(x => x.s).sort((a, b) => b.s - a.s).slice(0, 8).sort((a, b) => a.r[1] - b.r[1] || b.s - a.s);
   const miss = SK_MISS.map(r => ({ r, s: score(r[2]) })).filter(x => x.s).sort((a, b) => b.s - a.s).slice(0, 3), gaps = SK_GAP.filter(g => g[0].test(q));
+  const ownNames = new Set(own.flatMap(x => x.r[0].split(' · '))), more = matchSkills(task, 8).filter(k => !ownNames.has(k.name));
   let html = '';
   if (own.length) html += '<div class="skh">가진 스킬 · 이 순서로</div>' + own.map((x, i) => `<div class="sk"><b>${i + 1}. ${STAGE[x.r[1]]} · <em>${x.r[0]}</em></b><small>${esc(x.r[3])}<br>이렇게 말하기: “${esc(x.r[4])}”</small></div>`).join('');
+  if (more.length) html += `<div class="skh">가진 스킬 ${allSkills().length}개 중 더 맞는 것</div>` + more.map(k => `<div class="sk"><b><em>${esc(k.name)}</em> <small>${esc(k.group || '')}${k.plugin ? ' · ' + esc(k.plugin) : ''}</small></b><small>${esc(k.desc || '')}</small></div>`).join('');
   if (miss.length || gaps.length) html += '<div class="skh">없는 스킬 · 찾아볼 것</div>' + miss.map(x => `<div class="sk"><b><em>${x.r[0]}</em> <small>(${x.r[1]})</small></b><small>${esc(x.r[3])}. 설치 전에 find-skills로 확인이 필요한 후보입니다.</small></div>`).join('')
     + gaps.map(g => `<div class="sk"><b>${g[1]}</b><small>이 부분은 가진 스킬이 없습니다. find-skills 검색어: <em>${g[2]}</em></small></div>`).join('');
   advPrompt = `[작업] ${task}\n\n` + (own.length ? '아래 스킬을 이 순서로 사용해서 진행해줘.\n' + own.map((x, i) => `${i + 1}. ${x.r[0]} (${STAGE[x.r[1]]}: ${x.r[3]})`).join('\n') + '\n\n' : '')
+    + (more.length ? '함께 쓸 만한 스킬: ' + more.map(k => k.name).join(', ') + '\n\n' : '')
     + '시작하기 전에 find-skills로 이 작업에 도움이 될 스킬을 더 찾아줘. 설치 수가 많고 출처가 믿을 만한 것만 추천하고, 설치는 내가 고른 뒤에 해줘.'
     + (miss.length ? '\n확인할 후보: ' + miss.map(x => `${x.r[0]} (${x.r[1]})`).join(', ') : '') + (gaps.length ? '\n검색어: ' + gaps.map(g => g[2]).join(', ') : '');
   html += '<div class="jrow"><button class="jact" data-copy="1">Claude에 붙여넣을 요청문 복사</button></div>';
