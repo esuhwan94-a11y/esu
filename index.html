@@ -247,7 +247,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
           <div class="jres" id="jres"></div>
         </div>
         <div class="hints" id="hints">
-          <button>출하 관련 뭐 있었지?</button><button>메일 확인해줘</button><button>이번 달 일정 뭐 있지?</button><button>사내 재고 웹 만들려는데 어떤 스킬?</button><button>내일 견적서 보내기 메모해줘</button>
+          <button>출고지시 뭐 있어?</button><button>메일 확인해줘</button><button>이번 달 일정 뭐 있지?</button><button>사내 재고 웹 만들려는데 어떤 스킬?</button><button>내일 견적서 보내기 메모해줘</button>
         </div>
         <form class="jbar" id="jbar">
           <span class="orb" aria-hidden="true"></span>
@@ -778,12 +778,46 @@ async function calCheck(q) { setFocus(null); const n = new Date(), d0 = new Date
   else { a = d0; b = plus(d0, 14); label = '앞으로 2주'; }
   const iso = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T00:00:00`;
   setBusy(true); say('캘린더를 확인하고 있습니다.');
-  try { const p = await conn(GC, 'list_events', { startTime: iso(a), endTime: iso(b), pageSize: 50, orderBy: 'startTime' });
-    const ev = (p.events || []).filter(e => e.status !== 'cancelled').map(e => { const st = e.start || {}, dt = new Date(st.dateTime || st.date + 'T00:00:00'); return { t: e.summary || '(제목 없음)', dt, all: !st.dateTime, url: e.htmlLink, loc: e.location || '' }; }).sort((x, y) => x.dt - y.dt);
+  try { const base = { startTime: iso(a), endTime: iso(b), pageSize: 50, orderBy: 'startTime' }, [p, p2] = await Promise.all([conn(GC, 'list_events', base), conn(GC, 'list_events', { ...base, calendarId: KABCAL }).catch(() => ({}))]), seen = new Set();
+    const ev = [...(p.events || []), ...(p2.events || [])].filter(e => !seen.has(e.id) && seen.add(e.id)).filter(e => e.status !== 'cancelled').map(e => { const st = e.start || {}, dt = new Date(st.dateTime || st.date + 'T00:00:00'); return { t: e.summary || '(제목 없음)', dt, all: !st.dateTime, url: e.htmlLink, loc: e.location || '' }; }).sort((x, y) => x.dt - y.dt);
     const when = e => `${e.dt.getMonth() + 1}월 ${e.dt.getDate()}일 ${DOW[e.dt.getDay()]}요일${e.all ? '' : ' ' + e.dt.getHours() + '시' + (e.dt.getMinutes() ? ' ' + e.dt.getMinutes() + '분' : '')}`; setBusy(false);
     if (!ev.length) say(`${label}에는 등록된 일정이 없습니다.`);
     else say(`${label} 일정은 ${ev.length}건입니다. ` + ev.slice(0, 3).map(e => `${when(e)}, ${e.t}.`).join(' '), ev.map(e => `<div class="sk"><b>${e.dt.getMonth() + 1}.${e.dt.getDate()} (${DOW[e.dt.getDay()]}) ${e.all ? '종일' : pad2(e.dt.getHours()) + ':' + pad2(e.dt.getMinutes())} · ${esc(e.t)}</b>${e.loc ? `<small>${esc(e.loc)}</small>` : ''}${e.url ? `<div class="jrow"><a href="${esc(e.url)}" target="_blank" rel="noopener">↗ 캘린더에서 열기</a></div>` : ''}</div>`).join(''));
   } catch (e) { connErr(e, GC); } }
+
+/* ---------- live shipping jobs (read-only SELECT), Drive search and Slack through the viewer's connectors ---------- */
+const SB = 'Supabase', SBP = 'bwvopnybgqfagsfuhxvg', DR = 'Google Drive', SL = 'Slack', KABCAL = '5372ecbbc8505cdf1890a2d3fc6d23f3a574ffedb15c57dc3967196a6160176a@group.calendar.google.com';
+const SLCH = [['요청사항', 'C0CAULPQGRM'], ['kab', 'C0CB4P7BZ7X'], ['출고', 'C0CB4PH4P8V'], ['kab-업무일정', 'C0CBEUH3HT6'], ['kab-대리점-알림', 'C0CAVFU3G9M'], ['kab-타타대우-알림', 'C0CC58P4E48'], ['kab-관리자-알림', 'C0CC58P164Q']];
+async function sql(query) { const p = await conn(SB, 'execute_sql', { project_id: SBP, query }), txt = String(typeof p === 'string' ? p : (p.result || '')), m = txt.match(/<untrusted-data-[^>]+>\s*([\s\S]*?)\s*<\/untrusted-data/); try { const v = JSON.parse(m ? m[1] : txt); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+const pgDate = v => v ? mdate(String(v).replace(' ', 'T').replace(/\+00$/, 'Z')) : '';
+const jobState = j => j.shipped_at ? '출고완료' : j.dispatched_at ? '배차됨' : j.ready_at ? '출고준비완료' : '준비 전';
+async function shipCheck(q) { setFocus(null);
+  const kw = tokens(q).filter(t => !/(출고|출하|지시|현황|대기|남은|남았|업체|어디|뭐|무슨|어떤|있|알려|보여|확인|오늘|완료|준비|배차|목록|지금|아직|해줘|좀|^건$|^거$|^것$)/.test(t)).map(t => t.replace(/[^0-9a-zA-Z가-힣()㈜]/g, '')).filter(t => t.length >= 2);
+  const done = /완료/.test(q) && !/준비/.test(q); let where, label;
+  if (kw.length) { where = kw.map(k => `company ilike '%${k}%'`).join(' or '); label = `“${kw.join(' ')}” 출고`; }
+  else if (done) { where = "shipped_at >= date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul'"; label = '오늘 출고완료된'; }
+  else { where = 'shipped_at is null'; label = '아직 출고되지 않은'; }
+  setBusy(true); say('출하관리 데이터를 확인하고 있습니다.');
+  try { const rows = await sql(`select company, note, pallets, shipping_mode, payment, created_at, ready_at, dispatched_at, shipped_at from public.jobs where ${where} order by created_at desc limit 40`); setBusy(false);
+    if (!rows.length) { say(`${label} 건이 없습니다.`); return; }
+    const cnt = {}; rows.forEach(j => { const st = jobState(j); cnt[st] = (cnt[st] || 0) + 1; }); const names = [...new Set(rows.map(j => j.company))];
+    say(`${label} 건은 ${rows.length}건입니다. ${Object.entries(cnt).map(([k, v]) => `${k} ${v}건`).join(', ')}. 업체는 ${names.slice(0, 6).join(', ')}${names.length > 6 ? ' 외 ' + (names.length - 6) + '곳' : ''}입니다.`,
+      rows.map(j => `<div class="sk"><b>${esc(j.company)} <small>${jobState(j)}${j.shipping_mode ? ' · ' + esc(j.shipping_mode) : ''}${j.payment ? ' ' + esc(j.payment) : ''}${j.pallets ? ' · ' + j.pallets + 'P' : ''}</small></b><small>${esc(String(j.note || '').slice(0, 170))}<br>등록 ${pgDate(j.created_at)}${j.ready_at ? ' · 준비 ' + pgDate(j.ready_at) : ''}${j.shipped_at ? ' · 출고 ' + pgDate(j.shipped_at) : ''}</small></div>`).join(''));
+  } catch (e) { connErr(e, SB); } }
+async function driveSearch(q) { setFocus(null); const kw = tokens(q).filter(t => !/^(드라이브|구글|구글드라이브|파일|문서|찾아|찾아줘|검색|검색해줘|어디|있어|보여줘|열어줘|좀|해줘)$/.test(t)).join(' ').replace(/['\\]/g, ' ').trim();
+  if (!kw) { say('찾을 파일 이름이나 내용을 같이 말해 주세요. 예: “드라이브에서 단가표 찾아줘”'); return; }
+  setBusy(true); say('드라이브에서 찾고 있습니다.');
+  try { const p = await conn(DR, 'search_files', { query: `fullText contains '${kw}'`, pageSize: 10, excludeContentSnippets: true }), fs = p.files || []; setBusy(false);
+    if (!fs.length) say(`드라이브에 “${kw}”가 들어간 파일이 없습니다.`);
+    else say(`드라이브에서 “${kw}” 파일 ${fs.length}개를 찾았습니다. 첫 번째는 ${fs[0].title}입니다.`, fs.map(f => `<div class="sk"><b>${esc(f.title || '(이름 없음)')}</b><small>${/folder/.test(f.mimeType || '') ? '폴더' : '파일'} · 수정 ${mdate(f.modifiedTime)}</small>${f.viewUrl ? `<div class="jrow"><a href="${esc(f.viewUrl)}" target="_blank" rel="noopener">↗ Drive에서 열기</a></div>` : ''}</div>`).join(''));
+  } catch (e) { connErr(e, DR); } }
+async function slackCheck(q) { setFocus(null); const pick = SLCH.filter(c => (/요청/.test(q) && c[0] === '요청사항') || (/출고/.test(q) && c[0] === '출고') || (/일정/.test(q) && c[0] === 'kab-업무일정') || (/대리점/.test(q) && /대리점/.test(c[0])) || (/타타/.test(q) && /타타/.test(c[0])) || (/관리자/.test(q) && /관리자/.test(c[0])) || (/알림/.test(q) && /알림/.test(c[0]))), list = pick.length ? pick : SLCH.slice(0, 4);
+  setBusy(true); say('슬랙을 확인하고 있습니다.'); let html = '', okN = 0;
+  for (const [name, id] of list) { try { const p = await conn(SL, 'slack_read_channel', { channel_id: id, limit: 4, response_format: 'concise' });
+      const txt = String(p.messages || '').replace(/^Channel:.*\n+/, '').replace(/\s*<[^>]*@slack-bots\.com>/g, '').trim(); okN++;
+      html += `<div class="sk"><b>#${esc(name)}</b><small style="white-space:pre-wrap">${esc(txt.slice(0, 700)) || '최근 메시지가 없습니다.'}</small></div>`;
+    } catch (e) { if (!okN && e && /^(no_mcp|needs_reauth|server_not_connected|not_in_manifest|approval_required|blocked_by_policy|selection_required)$/.test(e.code)) { connErr(e, SL); return; } html += `<div class="sk"><b>#${esc(name)}</b><small>이 채널은 읽지 못했습니다.</small></div>`; } }
+  setBusy(false); say(`슬랙 채널 ${okN}개의 최근 메시지입니다.`, html); }
 
 /* ---------- skill advisor: which skills to use for a task, in order, and what is missing ---------- */
 const STAGE = ['', '조사·기획', '디자인', '개발·데이터', '점검', '자동화', '문서', '영업·홍보'];
@@ -893,6 +927,9 @@ function ask(raw) {
     if (!db.pw) lockDialog('set', mark); else mark(); return; }
   if (/(메일|이메일|편지함)/.test(q) && !/(메모|노트|찾아)/.test(q)) { if (/(지워|삭제|휴지통)/.test(q)) { mailDelete(q); return; } if (/(확인|읽어|보여|왔|온 ?거|있어|알려|체크|뭐)/.test(q)) { mailCheck(q); return; } }
   if (/(일정|캘린더|스케줄|약속)/.test(q) && /(뭐|알려|보여|확인|있지|있어|있나|읽어|체크)/.test(q) && !/(메모|노트|채널|찾아)/.test(q)) { calCheck(q); return; }
+  if (/(슬랙|slack)/i.test(q) && /(확인|읽어|보여|뭐|알려|왔|있어|체크)/.test(q) && !/(메모|노트)/.test(q)) { slackCheck(q); return; }
+  if (/드라이브/.test(q) && /(찾아|검색|어디|있어|보여)/.test(q)) { driveSearch(q); return; }
+  if (/(출고|출하|배차)/.test(q) && /(지시|현황|대기|남은|업체|어디|뭐|있어|있지|알려|보여|확인|완료)/.test(q) && !/(메모|노트|기록|찾아|메일|관련|있었)/.test(q)) { shipCheck(q); return; }
   if (/스킬/.test(q) && /(추천|어떤|뭐|무슨|쓰면|써야|사용하|사용해|배열|골라|필요)/.test(q)) { advise(q); return; }
   if (/^(전체|리셋|초기화|전체 ?보기|처음으로)/.test(q)) { setFocus(null); $('#jout').hidden = true; fit(); say('전체 그래프로 돌아왔습니다. 노트 ' + db.notes.length + '개가 연결되어 있습니다.'); return; }
   if ((m = q.match(/^(?:새 ?노트|메모|기록)\s*[:：]?\s+(.+)/)) || (m = q.match(/^(.+?)\s*(?:라고|이라고)?\s*(?:메모해 ?줘|기록해 ?줘|적어 ?줘|저장해 ?줘|메모)$/))) {
