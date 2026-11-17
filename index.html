@@ -106,6 +106,10 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .jres textarea{width:100%;height:120px;margin-top:8px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12px}
 .jmeta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}.jmeta i{width:7px;height:7px;border-radius:50%}
 .jcard p{margin:8px 0 2px;line-height:1.65;color:#d2c3cb;white-space:pre-wrap;overflow-wrap:anywhere}
+.jres .wl,.jres .wl:hover{display:inline;padding:0 1px;border:0;background:none;color:var(--accent-hi);text-decoration:underline;text-underline-offset:3px;font:inherit;text-align:left}
+.jcard a,.elinks a{color:var(--accent-hi);overflow-wrap:anywhere}
+.jcard a{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;margin:2px 0;border:1px solid rgba(255,79,163,.4);border-radius:99px;text-decoration:none;font-size:12.5px}
+.elinks a.tag{text-decoration:none}
 .jrow{display:flex;flex-wrap:wrap;gap:8px}
 .jbar{display:flex;align-items:center;gap:8px;background:rgba(16,12,9,.92);border:1px solid rgba(255,79,163,.55);border-radius:10px;padding:5px 6px 5px 12px;box-shadow:0 0 0 4px rgba(255,79,163,.06),0 8px 30px rgba(0,0,0,.5)}
 .orb{width:22px;height:22px;border-radius:50%;flex:none;border:2px solid var(--accent);border-right-color:transparent;position:relative;animation:spin 3.2s linear infinite}
@@ -275,6 +279,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
         <input id="e-tags" placeholder="태그 (쉼표로 구분)" aria-label="태그">
       </div>
       <textarea id="e-body" placeholder="생각나는 대로 적어두세요" aria-label="내용"></textarea>
+      <div class="elinks" id="e-urls"></div>
       <div class="hint">본문에 <code>[[노트 제목]]</code>을 쓰면 그 노트와 선으로 이어집니다. 같은 태그끼리는 허브로 모여요.</div>
       <div><div class="cap" style="padding-left:0">연결된 노트</div><div class="elinks" id="e-links"></div></div>
       <div class="efoot"><button class="btn ghost" id="e-lock">중요로 잠그기</button><button class="btn danger" id="e-del">삭제</button></div>
@@ -626,6 +631,7 @@ function openNote(id, focusTitle) {
 function renderLinks() {
   const ids = [...(adj.get(cur.id) || [])].filter(i => nodeById.get(i) && nodeById.get(i).kind === 'note');
   $('#e-meta').textContent = FOLD[cur.folder].name + ' · 연결 ' + ids.length + '개';
+  $('#e-urls').innerHTML = [...new Set(cur.body.match(/https?:\/\/[^\s<]+/g) || [])].map(u => `<a class="tag" href="${esc(u)}" target="_blank" rel="noopener">↗ ${linkLabel(u)}</a>`).join('');
   $('#e-links').innerHTML = ids.map(i => `<button class="tag" data-id="${i}">${esc(nodeById.get(i).label)}</button>`).join('') || '<span class="hint">아직 연결된 노트가 없어요</span>';
 }
 let edT;
@@ -770,9 +776,14 @@ function advise(q) {
 }
 function copyPrompt() { const done = () => toast('복사했습니다. Claude 입력창에 붙여넣으세요.'), fall = () => { if (!$('#jres textarea')) { const ta = document.createElement('textarea'); ta.value = advPrompt; ta.readOnly = true; $('#jres').append(ta); } const ta = $('#jres textarea'); ta.focus(); ta.select(); toast('아래 글을 길게 눌러 복사해 주세요.'); };
   try { navigator.clipboard.writeText(advPrompt).then(done, fall); } catch (e) { fall(); } }
+const linkLabel = u => /drive\.google|docs\.google/.test(u) ? 'Drive에서 열기' : /claude\.ai\/code\/session/.test(u) ? 'Claude 작업 열기' : /claude\.ai/.test(u) ? 'Claude에서 열기' : /slack\.com/.test(u) ? 'Slack에서 열기' : /mail\.google/.test(u) ? '메일 열기' : /github\.com/.test(u) ? 'GitHub 열기' : u.replace(/^https?:\/\/(www\.)?/, '').split(/[/?#]/)[0] + ' 열기';
+const unesc = t => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+function rich(text) { // note text with [[links]] that jump to the note and URLs that open
+  return esc(text).replace(/\[\[([^\]]+)\]\]/g, (m, t) => { const o = byTitle(unesc(t)); return o ? `<button class="wl" data-pick="${o.id}">${t}</button>` : t; })
+    .replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">↗ ${linkLabel(unesc(u))}</a>`); }
 function pick(id) { const n = byId(id); if (!n || !nodeById.get(id)) return; if (isLocked(n)) return guard(n, () => pick(id)); show('graph');
-  const d = new Date(n.updated), body = n.body.replace(/\[\[|\]\]/g, '');
-  say(`「${n.title || '제목 없음'}」을 확대했습니다.`, `<div class="jcard"><div class="jmeta"><i style="background:${FOLD[n.folder].color}"></i>${FOLD[n.folder].name} · ${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}${n.tags.length ? ' · ' + esc(n.tags.map(t => '#' + t).join(' ')) : ''}</div><p>${esc(body.slice(0, 900))}${body.length > 900 ? '…' : ''}</p><div class="jrow"><button class="jact" data-id="${n.id}">열어서 편집</button>${lastQ ? '<button class="jact ghost" data-back="1">결과 목록으로</button>' : ''}</div></div>`);
+  const d = new Date(n.updated);
+  say(`「${n.title || '제목 없음'}」을 확대했습니다.`, `<div class="jcard"><div class="jmeta"><i style="background:${FOLD[n.folder].color}"></i>${FOLD[n.folder].name} · ${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}${n.tags.length ? ' · ' + esc(n.tags.map(t => '#' + t).join(' ')) : ''}</div><p>${rich(n.body.slice(0, 1600))}${n.body.length > 1600 ? '…' : ''}</p><div class="jrow"><button class="jact" data-id="${n.id}">열어서 편집</button>${lastQ ? '<button class="jact ghost" data-back="1">결과 목록으로</button>' : ''}</div></div>`);
   setFocus(new Set([id])); blip(900, 1500, .12, .04); }
 function ask(raw) {
   const q = raw.trim(); if (!q) return; show('graph'); $('#jq').value = '';
