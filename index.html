@@ -161,6 +161,11 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .sheet p{margin:0;color:var(--muted);line-height:1.55;font-size:13px}
 .sheet textarea{height:130px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px;font-family:var(--mono);font-size:11.5px;resize:none}
 .sheet .erow{flex-wrap:wrap}
+.sheet input[type=password]{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:11px 12px;font-size:16px;outline:0}
+.sheet input[type=password]:focus{border-color:var(--accent)}
+.sheet .err{color:var(--res);min-height:1.3em}
+#e-lock.on{background:var(--accent);color:#2a0414;border-color:transparent}
+.lk{display:inline-flex;vertical-align:-2px;margin-right:4px;color:var(--accent-hi)}
 .toast{position:absolute;left:50%;top:58px;transform:translateX(-50%);z-index:70;background:var(--panel2);border:1px solid var(--accent);border-radius:99px;padding:7px 14px;font-size:13px;max-width:calc(100% - 32px)}
 .scrim{display:none}
 
@@ -264,7 +269,8 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       <textarea id="e-body" placeholder="생각나는 대로 적어두세요" aria-label="내용"></textarea>
       <div class="hint">본문에 <code>[[노트 제목]]</code>을 쓰면 그 노트와 선으로 이어집니다. 같은 태그끼리는 허브로 모여요.</div>
       <div><div class="cap" style="padding-left:0">연결된 노트</div><div class="elinks" id="e-links"></div></div>
-      <div class="efoot"><span class="hint">입력하면 바로 저장됩니다</span><button class="btn danger" id="e-del">삭제</button></div>
+      <div class="efoot"><button class="btn ghost" id="e-lock">중요로 잠그기</button><button class="btn danger" id="e-del">삭제</button></div>
+      <span class="hint">입력하면 바로 저장됩니다. 중요로 잠근 노트는 열 때 비밀번호를 묻습니다.</span>
     </div>
   </aside>
 
@@ -274,7 +280,18 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       <p>노트는 이 기기의 브라우저에만 저장됩니다. 아래 내용을 복사해 두면 다른 기기에서 붙여넣어 그대로 옮길 수 있어요.</p>
       <textarea id="backup" aria-label="백업 데이터" spellcheck="false"></textarea>
       <div class="erow"><button class="btn" id="b-copy">복사</button><button class="btn ghost" id="b-load">붙여넣은 내용으로 복원</button><button class="btn danger" id="b-wipe">전부 비우기</button><button class="btn ghost" id="b-close" style="margin-left:auto">닫기</button></div>
+      <div class="erow"><button class="btn ghost" id="b-relock">중요 노트 지금 잠그기</button><button class="btn ghost" id="b-pw">비밀번호 설정·변경</button></div>
     </div>
+  </div>
+  <div class="modal" id="lock" hidden>
+    <form class="sheet" id="lk-form">
+      <h2 id="lk-title">잠긴 노트</h2>
+      <p id="lk-desc"></p>
+      <input type="password" id="lk-pw" placeholder="비밀번호" autocomplete="off" aria-label="비밀번호">
+      <input type="password" id="lk-pw2" placeholder="비밀번호 다시 입력" autocomplete="off" aria-label="비밀번호 확인">
+      <p class="err" id="lk-err"></p>
+      <div class="erow"><button class="btn" type="submit">확인</button><button class="btn ghost" type="button" id="lk-cancel" style="margin-left:auto">취소</button></div>
+    </form>
   </div>
   <div class="toast" id="toast" hidden></div>
 </div>
@@ -463,6 +480,7 @@ function draw(ts) {
     glow(n.color, x, y, r * (n.kind === 'hub' ? 4 : 3.3), a * .8);
     ctx.fillStyle = ctx.strokeStyle = n.color; ctx.lineWidth = 1; ctx.globalAlpha = a * .7;
     if (n.kind === 'hub') hex(x, y, r + 5, t * .25 + n.x * .01); else arc(x, y, r + 2.5, 0, 6.283);
+    if (n.note && n.note.locked) { ctx.globalAlpha = a * .9; ctx.strokeStyle = '#fff0f7'; ctx.strokeRect(x - r - 5.5, y - r - 5.5, r * 2 + 11, r * 2 + 11); ctx.strokeStyle = n.color; }
     if (isF) { const rot = t * 1.2 + n.y * .01, R = r + 8; ctx.strokeStyle = ACCHI; ctx.lineWidth = 1.6; ctx.globalAlpha = 1;
       for (let i = 0; i < 4; i++) arc(x, y, R, rot + i * 1.5708, rot + i * 1.5708 + .85);
       const p = reduce ? .5 : (t * .8 + n.x * .01) % 1; ctx.globalAlpha = 1 - p; ctx.lineWidth = 1; arc(x, y, R + p * 18, 0, 6.283); }
@@ -552,11 +570,11 @@ function renderSide() {
 }
 function renderVault() {
   const q = $('#vq').value.trim().toLowerCase();
-  const list = db.notes.filter(n => (!vf.folder || n.folder === vf.folder) && (!vf.tag || n.tags.includes(vf.tag)) && (!q || (n.title + ' ' + n.body + ' ' + n.tags.join(' ')).toLowerCase().includes(q))).sort((a, b) => b.updated - a.updated);
+  const list = db.notes.filter(n => (!vf.folder || n.folder === vf.folder) && (!vf.tag || n.tags.includes(vf.tag)) && (!q || (n.title + ' ' + (isLocked(n) ? '' : n.body) + ' ' + n.tags.join(' ')).toLowerCase().includes(q))).sort((a, b) => b.updated - a.updated);
   const f = $('#vfilter'); f.hidden = !(vf.folder || vf.tag);
   f.innerHTML = `${vf.folder ? esc(FOLD[vf.folder].name) + ' 폴더' : '#' + esc(vf.tag || '')}만 보는 중 · ${list.length}개 <button id="vclear">전체 보기</button>`;
   $('#vlist').innerHTML = list.map(n => { const d = new Date(n.updated);
-    return `<button class="vitem" data-id="${n.id}"><i style="background:${FOLD[n.folder].color}"></i><b>${esc(n.title || '제목 없음')}</b><time>${d.getMonth()+1}.${String(d.getDate()).padStart(2, '0')}</time><small>${esc(n.tags.map(t => '#'+t).join(' '))} ${esc(n.body.replace(/\[\[|\]\]/g, '').slice(0, 90))}</small></button>`; }).join('')
+    return `<button class="vitem" data-id="${n.id}"><i style="background:${FOLD[n.folder].color}"></i><b>${n.locked ? LOCK : ''}${esc(n.title || '제목 없음')}</b><time>${d.getMonth()+1}.${String(d.getDate()).padStart(2, '0')}</time><small>${esc(n.tags.map(t => '#'+t).join(' '))} ${isLocked(n) ? '잠긴 노트' : esc(n.body.replace(/\[\[|\]\]/g, '').slice(0, 90))}</small></button>`; }).join('')
     || `<div class="empty">${db.notes.length ? '조건에 맞는 노트가 없습니다.' : '아직 노트가 없습니다. “새 노트”로 첫 기록을 남겨 보세요.'}</div>`;
 }
 function show(view) {
@@ -585,9 +603,9 @@ $('#clear-sample').onclick = () => { db = { notes:[], sample:false }; save(); se
 let cur = null;
 function newNote(title, body, folder, tags) { const n = { id:uid(), folder:folder || 'idea', title, tags:tags || [], body, updated:Date.now() }; db.notes.push(n); save(); refresh(); return n; }
 function openNote(id, focusTitle) {
-  const n = byId(id); if (!n) return; cur = n;
+  const n = byId(id); if (!n) return; if (isLocked(n)) return guard(n, () => openNote(id, focusTitle)); cur = n;
   $('#e-title').value = n.title; $('#e-folder').value = n.folder; $('#e-tags').value = n.tags.join(', '); $('#e-body').value = n.body;
-  $('#e-del').textContent = '삭제'; delete $('#e-del').dataset.sure; renderLinks(); $('#editor').hidden = false;
+  $('#e-del').textContent = '삭제'; delete $('#e-del').dataset.sure; $('#e-lock').textContent = n.locked ? '중요 · 잠금 켜짐' : '중요로 잠그기'; $('#e-lock').classList.toggle('on', !!n.locked); renderLinks(); $('#editor').hidden = false;
   if (focusTitle) $('#e-title').focus();
 }
 function renderLinks() {
@@ -605,13 +623,40 @@ $('#e-close').onclick = () => { $('#editor').hidden = true; cur = null; };
 $('#e-del').onclick = e => { const b = e.currentTarget; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = '정말 삭제할까요?'; return; }
   db.notes = db.notes.filter(n => n !== cur); cur = null; $('#editor').hidden = true; save(); setFocus(null); refresh(); toast('노트를 삭제했습니다.'); };
 
+/* ---------- lock for important notes ---------- */
+const LOCK = '<span class="lk"><svg class="i" viewBox="0 0 24 24" style="width:13px;height:13px"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span>';
+let unlocked = false, lockCb = null, lockMode = 'unlock';
+function hashPw(pw, salt) { let h1 = 0xdeadbeef, h2 = 0x41c6ce57; const str = salt + '|' + pw;
+  for (let r = 0; r < 3000; r++) for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i) + r; h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(16) + (h1 >>> 0).toString(16); }
+const isLocked = n => !!(n && n.locked && !unlocked);
+const lkErr = m => { $('#lk-err').textContent = m; };
+function lockDialog(mode, cb) { lockMode = mode; lockCb = cb || null;
+  $('#lk-title').textContent = mode === 'set' ? '비밀번호 설정' : '잠긴 노트';
+  $('#lk-desc').textContent = mode === 'set' ? '중요로 잠근 노트를 열 때 물어볼 비밀번호를 정하세요. 잊으면 되찾을 수 없습니다.' : '중요로 잠근 노트입니다. 비밀번호를 입력하면 열립니다.';
+  $('#lk-pw2').hidden = mode !== 'set'; $('#lk-pw').value = $('#lk-pw2').value = ''; lkErr(''); $('#lock').hidden = false; $('#lk-pw').focus(); }
+function guard(n, cb) { if (!isLocked(n)) return cb(); lockDialog(db.pw ? 'unlock' : 'set', cb); }
+function relock() { if (!unlocked) return; unlocked = false; if (cur && cur.locked) { $('#editor').hidden = true; cur = null; } $('#jout').hidden = true; $('#settings').hidden = true; setFocus(null); refresh(); }
+$('#lk-form').addEventListener('submit', e => { e.preventDefault(); const pw = $('#lk-pw').value;
+  if (lockMode === 'set') { if (pw.length < 4) return lkErr('4자 이상으로 정해 주세요.'); if (pw !== $('#lk-pw2').value) return lkErr('두 비밀번호가 다릅니다.');
+    const salt = uid() + uid(); db.pw = { salt, hash: hashPw(pw, salt) }; save(); unlocked = true; toast('비밀번호를 설정했습니다.'); }
+  else { if (hashPw(pw, db.pw.salt) !== db.pw.hash) { blip(300, 170, .25); return lkErr('비밀번호가 맞지 않습니다.'); } unlocked = true; blip(700, 1400, .15); toast('잠금을 풀었습니다. 화면을 벗어나면 다시 잠깁니다.'); }
+  $('#lock').hidden = true; const cb = lockCb; lockCb = null; refresh(); if (cb) cb(); });
+$('#lk-cancel').onclick = () => { $('#lock').hidden = true; lockCb = null; };
+document.addEventListener('visibilitychange', () => { if (document.hidden) relock(); });
+function setLock(v) { if (!cur) return; cur.locked = v; save(); $('#e-lock').textContent = v ? '중요 · 잠금 켜짐' : '중요로 잠그기'; $('#e-lock').classList.toggle('on', v); refresh(); toast(v ? '중요 노트로 잠갔습니다.' : '잠금을 해제했습니다.'); }
+$('#e-lock').onclick = () => { if (!cur) return; if (cur.locked) return setLock(false); if (!db.pw) return lockDialog('set', () => setLock(true)); setLock(true); };
+$('#b-relock').onclick = () => { relock(); toast('중요 노트를 잠갔습니다.'); };
+$('#b-pw').onclick = () => { $('#settings').hidden = true; if (db.pw && !unlocked) lockDialog('unlock', () => lockDialog('set')); else lockDialog('set'); };
+
 /* ---------- Jarvis ---------- */
 const STOP = new Set(['관련','관련된','찾아줘','찾아','검색해줘','검색','알려줘','보여줘','뭐였지','뭐지','뭐','어디','있어','있었지','있었나','노트','메모','내가','했던','대해','대한','대해서','좀','것','거','자비스','어떻게','왜','그때','예전에','정했지','정했는지','생각했는지']);
 const tokens = q => q.toLowerCase().replace(/[?!.,~"'“”]/g, ' ').split(/\s+/).map(t => { if (t.startsWith('#')) return t; const s = t.replace(/(에서|으로|이랑|에게|한테|은|는|이|가|을|를|의|도|와|과|로|에)$/, ''); return s.length >= 2 ? s : t; }).filter(t => t && !STOP.has(t));
 function search(q) {
   const tk = tokens(q); if (!tk.length) return { tk, hits:[] };
   const hits = [];
-  for (const n of db.notes) { let s = 0; const title = n.title.toLowerCase(), body = n.body.toLowerCase();
+  for (const n of db.notes) { let s = 0; const title = n.title.toLowerCase(), body = isLocked(n) ? '' : n.body.toLowerCase();
     for (const t of tk) { if (t[0] === '#') { if (n.tags.some(g => g.toLowerCase() === t.slice(1))) s += 6; continue; }
       if (title.includes(t)) s += 5; if (n.tags.some(g => g.toLowerCase().includes(t))) s += 4; if (FOLD[n.folder].name.includes(t)) s += 2;
       const c = body.split(t).length - 1; if (c) s += 1 + Math.min(c, 3) * .5; }
@@ -629,7 +674,7 @@ function snippet(n, tk) {
 let voiceOn = true, typeT, actx, lastQ = '';
 function blip(f0, f1, d, v) { if (!voiceOn) return; try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const o = actx.createOscillator(), g = actx.createGain(), n = actx.currentTime;
   o.type = 'sine'; o.frequency.setValueAtTime(f0, n); o.frequency.exponentialRampToValueAtTime(f1, n + d); g.gain.setValueAtTime(v || .05, n); g.gain.exponentialRampToValueAtTime(.0001, n + d); o.connect(g); g.connect(actx.destination); o.start(n); o.stop(n + d); } catch (e) {} }
-function speak(text) { if (!voiceOn || !('speechSynthesis' in window)) return; try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/[「」“”#]/g, ' ')); u.lang = 'ko-KR'; u.rate = 1.05; u.pitch = .9; speechSynthesis.speak(u); } catch (e) {} }
+function speak(text) { if (!voiceOn || !('speechSynthesis' in window)) return; try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/[「」“”#]/g, ' ')); u.lang = 'ko-KR'; u.rate = 1.02; u.pitch = 1.05; const vs = speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)); const fv = vs.find(v => /female|yuna|sora|heami|sun-?hi|seoyeon|여/i.test(v.name)) || vs[0]; if (fv) u.voice = fv; speechSynthesis.speak(u); } catch (e) {} }
 function say(text, html, action) {
   const out = $('#jout'), p = $('#jsay'); out.hidden = false; $('#hints').hidden = true; $('#jres').innerHTML = html || '';
   if (action) { const b = document.createElement('button'); b.className = 'jact'; b.textContent = action.label; b.onclick = action.run; $('#jres').append(b); }
@@ -637,7 +682,7 @@ function say(text, html, action) {
   if (reduce) { p.textContent = text; p.classList.add('done'); } else typeT = setInterval(() => { p.textContent = text.slice(0, i += 2); if (i >= text.length) { clearInterval(typeT); p.classList.add('done'); talking = false; } }, 22);
   speak(text);
 }
-function pick(id) { const n = byId(id); if (!n || !nodeById.get(id)) return; show('graph');
+function pick(id) { const n = byId(id); if (!n || !nodeById.get(id)) return; if (isLocked(n)) return guard(n, () => pick(id)); show('graph');
   const d = new Date(n.updated), body = n.body.replace(/\[\[|\]\]/g, '');
   say(`「${n.title || '제목 없음'}」을 확대했습니다.`, `<div class="jcard"><div class="jmeta"><i style="background:${FOLD[n.folder].color}"></i>${FOLD[n.folder].name} · ${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}${n.tags.length ? ' · ' + esc(n.tags.map(t => '#' + t).join(' ')) : ''}</div><p>${esc(body.slice(0, 280))}${body.length > 280 ? '…' : ''}</p><div class="jrow"><button class="jact" data-id="${n.id}">열어서 편집</button>${lastQ ? '<button class="jact ghost" data-back="1">결과 목록으로</button>' : ''}</div></div>`);
   setFocus(new Set([id])); blip(900, 1500, .12, .04); }
@@ -645,6 +690,11 @@ function ask(raw) {
   const q = raw.trim(); if (!q) return; show('graph'); $('#jq').value = '';
   const bar = $('#jbar'); bar.classList.add('busy'); setTimeout(() => bar.classList.remove('busy'), 900); blip(620, 1240, .14); setTimeout(() => blip(1240, 1860, .2, .03), 160);
   let m;
+  if (/^(잠가|잠금|잠그기|다시 잠)/.test(q)) { relock(); say('중요 노트를 다시 잠갔습니다.'); return; }
+  if ((m = q.match(/^(.+?)\s*(?:중요 ?표시|중요해|중요하다|잠가 ?줘|잠금해 ?줘)$/))) { const hit = search(m[1]).hits[0];
+    if (!hit) { say(`“${m[1]}”와 맞는 노트를 찾지 못했습니다.`); return; }
+    const mark = () => { hit.n.locked = true; save(); refresh(); say(`「${hit.n.title}」을 중요 노트로 잠갔습니다. 열 때 비밀번호를 묻습니다.`); setFocus(new Set([hit.n.id])); };
+    if (!db.pw) lockDialog('set', mark); else mark(); return; }
   if (/^(전체|리셋|초기화|전체 ?보기|처음으로)/.test(q)) { setFocus(null); $('#jout').hidden = true; fit(); say('전체 그래프로 돌아왔습니다. 노트 ' + db.notes.length + '개가 연결되어 있습니다.'); return; }
   if ((m = q.match(/^(?:새 ?노트|메모|기록)\s*[:：]?\s+(.+)/)) || (m = q.match(/^(.+?)\s*(?:라고|이라고)?\s*(?:메모해 ?줘|기록해 ?줘|적어 ?줘|저장해 ?줘|메모)$/))) {
     const text = m[1].trim(), n = newNote(text.length > 28 ? text.slice(0, 28) + '…' : text, text, 'idea');
@@ -658,7 +708,7 @@ function ask(raw) {
   lastQ = q; const ids = new Set(hits.map(h => h.n.id)); tk.filter(t => t[0] === '#' && nodeById.has(t)).forEach(t => ids.add(t));
   const label = tk.map(t => t.replace('#', '')).join(' · ');
   const text = `“${label}” 관련 기록 ${hits.length}건을 찾았습니다. 가장 가까운 건 「${hits[0].n.title}」입니다.`;
-  say(text, hits.map(h => `<button data-pick="${h.n.id}"><i style="background:${FOLD[h.n.folder].color}"></i><b>${esc(h.n.title || '제목 없음')}</b><small>${snippet(h.n, tk)}</small></button>`).join(''));
+  say(text, hits.map(h => `<button data-pick="${h.n.id}"><i style="background:${FOLD[h.n.folder].color}"></i><b>${h.n.locked ? LOCK : ''}${esc(h.n.title || '제목 없음')}</b><small>${isLocked(h.n) ? '잠긴 노트입니다. 누르면 비밀번호를 묻습니다.' : snippet(h.n, tk)}</small></button>`).join(''));
   setFocus(ids);
 }
 $('#jbar').addEventListener('submit', e => { e.preventDefault(); ask($('#jq').value); });
@@ -677,15 +727,16 @@ $('#jmic').onclick = () => {
 };
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); show('graph'); $('#jq').focus(); }
-  if (e.key === 'Escape') { if (!$('#settings').hidden) $('#settings').hidden = true; else if (!$('#editor').hidden) $('#e-close').click(); else $('#jclose').click(); }
+  if (e.key === 'Escape') { if (!$('#lock').hidden) $('#lk-cancel').click(); else if (!$('#settings').hidden) $('#settings').hidden = true; else if (!$('#editor').hidden) $('#e-close').click(); else $('#jclose').click(); }
 });
 
 /* ---------- backup ---------- */
-$('#open-settings').onclick = () => { $('#backup').value = JSON.stringify(db); $('#settings').hidden = false; $('#app').classList.remove('nav-open'); };
+const openSettings = () => { $('#backup').value = JSON.stringify(db); $('#settings').hidden = false; };
+$('#open-settings').onclick = () => { $('#app').classList.remove('nav-open'); if (db.pw && !unlocked && db.notes.some(n => n.locked)) lockDialog('unlock', openSettings); else openSettings(); };
 $('#b-close').onclick = () => $('#settings').hidden = true;
 $('#b-copy').onclick = () => { const ta = $('#backup'); ta.select(); (navigator.clipboard ? navigator.clipboard.writeText(ta.value) : Promise.reject()).then(() => toast('복사했습니다.'), () => toast('선택해 두었습니다. 직접 복사해 주세요.')); };
 $('#b-load').onclick = () => { try { const d = JSON.parse($('#backup').value); if (!Array.isArray(d.notes)) throw 0;
-  db = { sample:false, notes:d.notes.map(n => ({ id:n.id || uid(), folder:FOLD[n.folder] ? n.folder : 'idea', title:String(n.title || ''), tags:Array.isArray(n.tags) ? n.tags.map(String) : [], body:String(n.body || ''), updated:+n.updated || Date.now() })) };
+  db = { sample:false, pw:d.pw && d.pw.hash ? d.pw : undefined, notes:d.notes.map(n => ({ locked:!!n.locked, id:n.id || uid(), folder:FOLD[n.folder] ? n.folder : 'idea', title:String(n.title || ''), tags:Array.isArray(n.tags) ? n.tags.map(String) : [], body:String(n.body || ''), updated:+n.updated || Date.now() })) };
   save(); setFocus(null); refresh(); $('#settings').hidden = true; toast('노트 ' + db.notes.length + '개를 복원했습니다.'); } catch (e) { toast('백업 형식이 맞지 않습니다. 복사한 내용을 그대로 붙여넣어 주세요.'); } };
 $('#b-wipe').onclick = e => { const b = e.currentTarget; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = '정말 전부 지울까요?'; return; }
   delete b.dataset.sure; b.textContent = '전부 비우기'; db = { notes:[], sample:false }; save(); setFocus(null); refresh(); $('#settings').hidden = true; toast('볼트를 비웠습니다.'); };
