@@ -287,6 +287,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       <textarea id="backup" aria-label="백업 데이터" spellcheck="false"></textarea>
       <div class="erow"><button class="btn" id="b-copy">복사</button><button class="btn ghost" id="b-load">붙여넣은 내용으로 복원</button><button class="btn danger" id="b-wipe">전부 비우기</button><button class="btn ghost" id="b-close" style="margin-left:auto">닫기</button></div>
       <div class="erow"><button class="btn ghost" id="b-pick">잠글 노트 고르기</button><button class="btn ghost" id="b-relock">지금 다시 잠그기</button><button class="btn ghost" id="b-pw">비밀번호 설정·변경</button></div>
+      <div class="erow"><button class="btn" id="b-allow">마이크·연결 권한 한 번에 허용</button><button class="btn ghost" id="b-perm">권한 창 열기</button></div>
       <div class="erow"><select id="voice" aria-label="자비스 목소리" style="flex:1"></select><button class="btn ghost" id="voice-test">들어보기</button></div>
     </div>
   </div>
@@ -599,6 +600,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.folder) { vf = { folder:b.dataset.folder, tag:null }; show('vault'); }
   else if (b.dataset.tag) { show('graph'); ask('#' + b.dataset.tag); }
   else if (b.dataset.sel) { selSet.has(b.dataset.sel) ? selSet.delete(b.dataset.sel) : selSet.add(b.dataset.sel); renderVault(); }
+  else if (b.dataset.perm) openPerms();
   else if (b.dataset.copy) copyPrompt();
   else if (b.dataset.mread) mailRead(+b.dataset.mread);
   else if (b.dataset.mdel) mailDelAsk([+b.dataset.mdel]);
@@ -671,9 +673,14 @@ function startSelect() { const go = () => { selSet = new Set(db.notes.filter(n =
 function applySelect() { const done = () => { db.notes.forEach(n => { n.locked = selSet.has(n.id); }); save(); selMode = false; refresh(); toast(selSet.size ? `고른 노트 ${selSet.size}개만 잠갔습니다.` : '잠긴 노트가 없습니다.'); };
   if (selSet.size && !db.pw) lockDialog('set', done); else done(); }
 $('#v-lock').onclick = $('#b-pick').onclick = startSelect; $('#vsel-ok').onclick = applySelect; $('#vsel-no').onclick = () => { selMode = false; renderVault(); };
+function openPerms() { const fail = () => toast('화면 위쪽 메뉴의 “권한”에서 허용할 수 있습니다.'); if (perms) perms.manage().catch(fail); else fail(); }
+function allowAll() { if (!perms) return toast('이 화면에서는 권한을 바꿀 수 없습니다. claude.ai 링크로 열어 주세요.');
+  perms.request().then(st => { const on = Object.values(st || {}).filter(v => v === 'granted').length, off = Object.entries(st || {}).filter(([, v]) => v === 'denied' || v === 'unavailable').map(([k]) => k.replace(/^mcp:/, ''));
+    toast(`허용 ${on}개` + (off.length ? ` · 사용 불가: ${off.join(', ')}` : '')); }, () => toast('권한 창을 열지 못했습니다.')); }
 function fillVoices() { const sel = $('#voice'); let pref = ''; try { pref = localStorage.getItem('sb-voice') || ''; } catch (e) {}
   const vs = 'speechSynthesis' in window ? speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)) : [];
   sel.innerHTML = '<option value="">목소리 자동</option>' + (ctts ? ['buttery', 'airy', 'glassy', 'rounded'].map(v => `<option value="claude:${v}"${pref === 'claude:' + v ? ' selected' : ''}>Claude 음성 · ${v}</option>`).join('') : '') + vs.map(v => `<option value="${esc(v.name)}"${v.name === pref ? ' selected' : ''}>${esc(v.name)}</option>`).join(''); }
+$('#b-allow').onclick = allowAll; $('#b-perm').onclick = openPerms;
 $('#voice').onchange = e => { try { localStorage.setItem('sb-voice', e.target.value); } catch (x) {} };
 $('#voice-test').onclick = () => { const was = voiceOn; voiceOn = true; speak('안녕하세요. 자비스입니다. 무엇을 찾아드릴까요?'); voiceOn = was; };
 $('#b-pw').onclick = () => { $('#settings').hidden = true; if (db.pw && !unlocked) lockDialog('unlock', () => lockDialog('set')); else lockDialog('set'); };
@@ -699,7 +706,7 @@ function snippet(n, tk) {
   let h = esc(cut); tk.forEach(t => { const w = esc(t.replace('#', '')); if (w) h = h.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), m => `<mark>${m}</mark>`); });
   return h;
 }
-let voiceOn = true, typeT, actx, lastQ = '', dict = null, ctts = null, ttsOn = false;
+let voiceOn = true, typeT, actx, lastQ = '', dict = null, ctts = null, ttsOn = false, perms = null, inClaude = !!(window.claude && window.claude.use);
 function blip(f0, f1, d, v) { if (!voiceOn) return; try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const o = actx.createOscillator(), g = actx.createGain(), n = actx.currentTime;
   o.type = 'sine'; o.frequency.setValueAtTime(f0, n); o.frequency.exponentialRampToValueAtTime(f1, n + d); g.gain.setValueAtTime(v || .05, n); g.gain.exponentialRampToValueAtTime(.0001, n + d); o.connect(g); g.connect(actx.destination); o.start(n); o.stop(n + d); } catch (e) {} }
 function speak(text) { if (!voiceOn) return; let vp = ''; try { vp = localStorage.getItem('sb-voice') || ''; } catch (e) {}
@@ -946,7 +953,11 @@ $('#jvoice').onclick = e => { voiceOn = !voiceOn; e.currentTarget.classList.togg
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null;
 $('#jmic').onclick = () => {
   if (dict) { if (dict.active()) { dict.stop().catch(() => {}); return; }
-    dict.start({ language: 'ko' }).catch(e => { $('#jmic').classList.remove('rec'); toast(e && e.code === 'not_granted' ? '마이크 사용을 허용하지 않아 글로만 입력됩니다.' : e && e.code === 'dismissed' ? '마이크 허용 창이 닫혔습니다. 다시 눌러 주세요.' : '지금은 음성 입력을 쓸 수 없습니다. 글로 입력해 주세요.'); }); return; }
+    dict.start({ language: 'ko' }).catch(e => { $('#jmic').classList.remove('rec'); if (e && e.code === 'not_granted') { say('마이크를 허용하지 않은 상태입니다. 권한 창을 열어 마이크(받아쓰기)를 허용해 주세요.', '<div class="jrow"><button class="jact" data-perm="1">권한 창 열기</button></div>'); return; } toast( e && e.code === 'dismissed' ? '마이크 허용 창이 닫혔습니다. 다시 눌러 주세요.' : '지금은 음성 입력을 쓸 수 없습니다. 글로 입력해 주세요.'); }); return; }
+  if (inClaude) { // inside claude.ai the page cannot open the microphone itself; say exactly why it is off
+    const tell = st => st === 'denied' ? say('마이크를 거부해 둔 상태입니다. 권한 창에서 마이크(받아쓰기)를 허용해 주세요.', '<div class="jrow"><button class="jact" data-perm="1">권한 창 열기</button></div>')
+      : say('지금 연 화면에서는 마이크를 쓸 수 없습니다. Claude 모바일 앱 안이나 사파리에서는 지원되지 않습니다. 크롬에서 이 링크를 열거나, PC의 Claude 앱에서 열면 마이크 버튼이 동작합니다.');
+    if (perms) perms.state('dictation').then(tell, () => tell('unavailable')); else tell('unavailable'); return; }
   if (!SR) return toast('이 브라우저는 음성 입력을 지원하지 않습니다. 글로 입력해 주세요.');
   if (rec) { rec.stop(); return; }
   try { rec = new SR(); rec.lang = 'ko-KR'; rec.interimResults = true;
@@ -973,7 +984,8 @@ $('#b-wipe').onclick = e => { const b = e.currentTarget; if (!b.dataset.sure) { 
 
 /* ---------- viewer capabilities: microphone dictation and Claude voice (absent outside claude.ai) ---------- */
 if (window.claude && window.claude.use) {
-  window.claude.use('dictation').then(d => { if (!d) return; dict = d;
+  window.claude.use('permissions').then(x => { perms = x; }).catch(() => {});
+  window.claude.use('dictation').then(d => { if (!d) { $('#jmic').style.opacity = .45; return; } dict = d;
     d.onPartial(e => { $('#jq').value = e.text; });
     d.onFinal(e => { const t = (e.text || '').trim(); if (t) { d.stop().catch(() => {}); ask(t); } });
     d.onState(e => { $('#jmic').classList.toggle('rec', e.state === 'listening' || e.state === 'starting'); if (e.state === 'idle' && e.reason === 'unavailable') toast('이 기기에서는 한국어 받아쓰기를 쓸 수 없습니다. 글로 입력해 주세요.'); }); }).catch(() => {});
