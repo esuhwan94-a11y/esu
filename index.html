@@ -71,6 +71,9 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .pill{font-family:var(--mono);font-size:12px;font-weight:600;padding:4px 10px;border-radius:99px;background:var(--accent-dim);color:var(--accent-hi);margin-left:auto;font-variant-numeric:tabular-nums}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;color:#d2c3cb;font-size:12.5px}
 .legend span{display:flex;align-items:center;gap:6px}.legend i{width:7px;height:7px;border-radius:50%}
+.legend .seg{margin-left:auto;pointer-events:auto;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:rgba(12,10,9,.75)}
+.seg button{padding:6px 13px;min-height:32px;font-size:12.5px;color:var(--muted)}
+.seg button.on{background:var(--accent);color:#2a0414;font-weight:600}
 .sample{pointer-events:auto;justify-self:start;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:99px;padding:3px 4px 3px 10px;background:rgba(12,10,9,.6)}
 .sample button{color:var(--accent-hi);padding:2px 8px;border-radius:99px;background:var(--accent-dim)}
 .gfoot{position:absolute;left:var(--gl);right:var(--gr);bottom:calc(10px + env(safe-area-inset-bottom, 0px));display:flex;justify-content:space-between;align-items:center;pointer-events:none}
@@ -95,7 +98,12 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .jres b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .jres small{grid-column:2;color:var(--muted);font-size:12.5px;line-height:1.45;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .jres mark{background:none;color:var(--accent-hi);font-weight:600}
-.jact{margin-top:8px;padding:6px 12px;border-radius:8px;background:var(--accent);color:#2a0414;font-weight:600}
+.jres .jact{display:inline-flex;margin-top:8px;padding:9px 14px;border-radius:8px;border:0;background:var(--accent);color:#2a0414;font-weight:600}
+.jres .jact:hover{background:var(--accent-hi)}
+.jres .jact.ghost,.jres .jact.ghost:hover{background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
+.jmeta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}.jmeta i{width:7px;height:7px;border-radius:50%}
+.jcard p{margin:8px 0 2px;line-height:1.65;color:#d2c3cb;white-space:pre-wrap;overflow-wrap:anywhere}
+.jrow{display:flex;flex-wrap:wrap;gap:8px}
 .jbar{display:flex;align-items:center;gap:8px;background:rgba(16,12,9,.92);border:1px solid rgba(255,79,163,.55);border-radius:10px;padding:5px 6px 5px 12px;box-shadow:0 0 0 4px rgba(255,79,163,.06),0 8px 30px rgba(0,0,0,.5)}
 .orb{width:22px;height:22px;border-radius:50%;flex:none;border:2px solid var(--accent);border-right-color:transparent;position:relative;animation:spin 3.2s linear infinite}
 .orb::after{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--accent)}
@@ -211,6 +219,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
         <div class="legend">
           <span><i style="background:var(--res)"></i>자료</span><span><i style="background:var(--idea)"></i>아이디어</span>
           <span><i style="background:var(--work)"></i>업무 기록</span><span><i style="background:var(--accent)"></i>허브</span>
+          <span class="seg" role="group" aria-label="보기 방식"><button id="m3d" class="on">3D</button><button id="mflat">평면</button></span>
         </div>
         <div class="sample" id="sample" hidden>지금 보이는 건 예시 노트예요<button id="clear-sample">비우고 시작</button></div>
       </div>
@@ -221,7 +230,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
           <div class="jres" id="jres"></div>
         </div>
         <div class="hints" id="hints">
-          <button>가격 관련 뭐 있었지?</button><button>고객 인터뷰 찾아줘</button><button>#회의</button><button>내일 견적서 보내기 메모해줘</button>
+          <button>출하 관련 뭐 있었지?</button><button>성적서 찾아줘</button><button>#클로드</button><button>내일 견적서 보내기 메모해줘</button>
         </div>
         <form class="jbar" id="jbar">
           <span class="orb" aria-hidden="true"></span>
@@ -270,6 +279,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
   <div class="toast" id="toast" hidden></div>
 </div>
 
+<script src="vault-pack.js"></script>
 <script>
 (() => {
 'use strict';
@@ -311,8 +321,14 @@ function seed() {
   db = { sample: true, notes: SEED.map(([folder, title, tags, body], i) => ({ id: uid(), folder, title, tags: tags.split(','), body, updated: now - i * 36e5 * 7 })) };
 }
 function load() {
-  try { const raw = localStorage.getItem(KEY); if (raw) { const d = JSON.parse(raw); if (Array.isArray(d.notes)) { db = d; return; } } } catch (e) {}
-  seed();
+  let ok = false, pv = null;
+  try { const raw = localStorage.getItem(KEY); if (raw) { const d = JSON.parse(raw); if (Array.isArray(d.notes)) { db = d; ok = true; } } pv = localStorage.getItem('sb-pack'); } catch (e) {}
+  const P = window.VAULT_PACK;
+  if (!ok) { if (P) db = { notes: [], sample: false }; else seed(); }
+  if (P && pv !== String(P.v)) { // bring in the linked work data once per pack version
+    if (db.sample) { const st = new Set(SEED.map(x => x[1])); db.notes = db.notes.filter(n => !st.has(n.title)); db.sample = false; }
+    const have = new Set(db.notes.map(n => n.id)); P.notes.forEach(n => { if (!have.has(n.id)) db.notes.push({ ...n, tags: [...n.tags] }); });
+    try { localStorage.setItem('sb-pack', String(P.v)); localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) {} }
 }
 let saveT;
 function save() {
@@ -352,7 +368,7 @@ function build() {
 const cv = $('#cv'), ctx = cv.getContext('2d');
 const MONO = css('--mono'), SANS = css('--sans'), F = 900;
 let W = 0, H = 0, dpr = 1, alpha = 1, bootT = null, pingT = -1e9, frame = 0, hudTop = 150;
-const cam = { k:1, ry:.6, rx:.42, tx:0, ty:0, tz:0, oy:0 }; let camTo = null, cR = 1, sR = 0, cP = 1, sP = 0;
+const cam = { k:1, ry:.6, rx:.42, tx:0, ty:0, tz:0, oy:0 }; let camTo = null, flat = false, cR = 1, sR = 0, cP = 1, sP = 0;
 let focus = null, hover = null, talking = false, talk = 0, ticker = '';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dust = Array.from({ length:280 }, () => { const r = 110 + Math.pow(Math.random(), .7) * 600; return { r, a:Math.random()*6.283, y:(Math.random()-.5) * (50 + r*.2), s:Math.random()*1.3+.5, p:Math.random()*6.283 }; });
@@ -379,7 +395,7 @@ function step() {
   for (let i = 0; i < n; i++) { const a = nodes[i];
     for (let j = i+1; j < n; j++) { const b = nodes[j]; let dx = b.x-a.x, dy = b.y-a.y, dz = b.z-a.z, d2 = dx*dx+dy*dy+dz*dz+40; if (d2 > 200000) continue;
       const f = 3000 / d2 * alpha, d = Math.sqrt(d2); dx = dx/d*f; dy = dy/d*f; dz = dz/d*f; a.vx -= dx; a.vy -= dy; a.vz -= dz; b.vx += dx; b.vy += dy; b.vz += dz; }
-    a.vx -= a.x * .003 * alpha; a.vy -= a.y * .008 * alpha; a.vz -= a.z * .003 * alpha; }
+    a.vx -= a.x * .003 * alpha; a.vy -= a.y * (flat ? .22 : .008) * alpha; a.vz -= a.z * .003 * alpha; }
   for (const l of links) { const dx = l.b.x-l.a.x, dy = l.b.y-l.a.y, dz = l.b.z-l.a.z, d = Math.sqrt(dx*dx+dy*dy+dz*dz) || 1, f = (d-l.len*1.7)/d * .03 * l.w * alpha;
     l.a.vx += dx*f; l.a.vy += dy*f; l.a.vz += dz*f; l.b.vx -= dx*f; l.b.vy -= dy*f; l.b.vz -= dz*f; }
   for (const a of nodes) { if (a.kind === 'core') { a.x = a.y = a.z = 0; continue; } a.vx *= .82; a.vy *= .82; a.vz *= .82; a.x += a.vx; a.y += a.vy; a.z += a.vz; }
@@ -392,8 +408,8 @@ function draw(ts) {
   if (frame++ % 30 === 0) hudTop = $('.ghead').offsetHeight - 16;
   const t = reduce ? 0 : ts / 1000, boot = reduce ? 1 : Math.min(1, (ts - bootT) / 2000), ez = 1 - Math.pow(1 - boot, 3);
   step();
-  if (!reduce && !ptrs.size) cam.ry += focus ? .0012 : .0028 + (1 - ez) * .03;
-  if (camTo) { let far = 0; for (const key of ['k', 'tx', 'ty', 'tz', 'oy']) { const d = camTo[key] - cam[key]; cam[key] += d * .08; far = Math.max(far, Math.abs(d) * (key === 'k' ? 300 : 1)); } if (far < .6) camTo = null; }
+  if (!reduce && !ptrs.size && !flat) cam.ry += focus ? .0012 : .0028 + (1 - ez) * .03;
+  if (camTo) { let far = 0; for (const key of ['k', 'tx', 'ty', 'tz', 'oy', 'rx']) { if (camTo[key] === undefined) continue; const d = camTo[key] - cam[key]; cam[key] += d * .08; far = Math.max(far, Math.abs(d) * (key === 'k' || key === 'rx' ? 300 : 1)); } if (far < .6) camTo = null; }
   cR = Math.cos(cam.ry); sR = Math.sin(cam.ry); cP = Math.cos(cam.rx); sP = Math.sin(cam.rx);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, W, H); ctx.setLineDash([]);
   ctx.globalCompositeOperation = 'lighter';
@@ -473,7 +489,7 @@ function draw(ts) {
   const span = bot - top - 70, my = top + 34 + clamp(Math.log(cam.k / .25) / Math.log(14), 0, 1) * span; ctx.globalAlpha = .9 * ez; ctx.beginPath(); ctx.moveTo(22, my); ctx.lineTo(29, my - 4); ctx.lineTo(29, my + 4); ctx.closePath(); ctx.fill();
   if (!reduce) { ctx.globalAlpha = .05; ctx.fillRect(0, top + (t * 46) % Math.max(1, bot - top), W, 1.5); }
   ctx.font = '11px ' + MONO; ctx.textAlign = 'right'; const deg = v => String(Math.round((((v % 6.283) + 6.283) % 6.283) * 57.3)).padStart(3, '0');
-  const lines = ['HOLO · SYS ONLINE', 'NODES ' + String(nodes.length).padStart(3, '0') + ' · LINKS ' + String(links.length).padStart(3, '0'), 'ZOOM ' + cam.k.toFixed(2) + 'x · ROT ' + deg(cam.ry) + '°', (reduce || Math.sin(t * 5) > 0 ? '■ ' : '□ ') + (focus ? 'TARGET LOCK ' + String(focus.ids.size).padStart(2, '0') : 'SCANNING')];
+  const lines = [(flat ? 'FLAT' : 'HOLO') + ' · SYS ONLINE', 'NODES ' + String(nodes.length).padStart(3, '0') + ' · LINKS ' + String(links.length).padStart(3, '0'), 'ZOOM ' + cam.k.toFixed(2) + 'x · ROT ' + deg(cam.ry) + '°', (reduce || Math.sin(t * 5) > 0 ? '■ ' : '□ ') + (focus ? 'TARGET LOCK ' + String(focus.ids.size).padStart(2, '0') : 'SCANNING')];
   lines.slice(0, compact ? 0 : 4).forEach((s, i) => { ctx.globalAlpha = (i === 3 ? .95 : .55) * ez; ctx.fillStyle = i === 3 && focus ? ACCHI : ACC; ctx.fillText(s, W - 26, top + 16 + i * 15); });
   if (compact) { ctx.globalAlpha = .9 * ez; ctx.fillStyle = focus ? ACCHI : ACC; ctx.fillText(lines[3], W - 26, top + 14); }
   // ticker of recent notes, then the boot log
@@ -489,7 +505,7 @@ function fit(ids) {
   let mx = 0, my = 0, mz = 0; if (ids) { list.forEach(n => { mx += n.x; my += n.y; mz += n.z; }); mx /= list.length; my /= list.length; mz /= list.length; }
   let rad = 0; list.forEach(n => rad = Math.max(rad, Math.hypot(n.x - mx, n.y - my, n.z - mz)));
   const padB = $('#jout').hidden ? 120 : Math.min(H * .36, 330) + 130, availH = Math.max(120, H - hudTop - padB);
-  camTo = { k: clamp(Math.min(W - 50, availH) / (2 * (rad + 60)), .3, 1.9), tx:mx, ty:my, tz:mz, oy:(hudTop - padB) / 2 };
+  camTo = { k: clamp(Math.min(W - 50, availH) / (2 * (rad + 60)), .3, 1.9), tx:mx, ty:my, tz:mz, oy:(hudTop - padB) / 2, rx: flat ? 1.5708 : (cam.rx > 1.2 ? .42 : cam.rx) };
 }
 function setFocus(ids) {
   if (!ids || !ids.size) { focus = null; return; }
@@ -509,15 +525,20 @@ cv.addEventListener('pointermove', e => { const [x, y] = pos(e);
   ptrs.set(e.pointerId, [x, y]);
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()], d = Math.hypot(a[0]-b[0], a[1]-b[1]); if (pinch) zoomAt(0, 0, d / pinch); pinch = d; return; }
   const dx = x - drag.px, dy = y - drag.py; drag.moved += Math.abs(dx) + Math.abs(dy); drag.px = x; drag.py = y;
-  if (drag.moved > 6) { cam.ry -= dx * .006; cam.rx = clamp(cam.rx + dy * .005, -1.35, 1.35); } });
+  if (drag.moved > 6) { if (flat) { const a = -dx / cam.k, b = dy / cam.k; cam.tx += a * cR - b * sR; cam.tz += a * sR + b * cR; camTo = null; } else { cam.ry -= dx * .006; cam.rx = clamp(cam.rx + dy * .005, -1.35, 1.35); if (camTo) camTo.rx = cam.rx; } } });
 const up = e => { ptrs.delete(e.pointerId); pinch = 0;
   if (drag.moved < 6 && e.type === 'pointerup') { const n = drag.node;
-    if (n && n.kind === 'note') openNote(n.id); else if (n && n.kind === 'hub') ask(n.label); else if (!n && focus) { setFocus(null); $('#jout').hidden = true; fit(); } }
+    if (n && n.kind === 'note') pick(n.id); else if (n && n.kind === 'hub') ask(n.label); else if (!n && focus) { setFocus(null); $('#jout').hidden = true; fit(); } }
   drag.node = null; };
 cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 function zoomAt(x, y, f) { cam.k = clamp(cam.k * f, .25, 3.5); if (camTo) camTo.k = cam.k; }
 cv.addEventListener('wheel', e => { e.preventDefault(); zoomAt(0, 0, Math.exp(-e.deltaY * .0015)); }, { passive:false });
 $('#zin').onclick = () => zoomAt(0, 0, 1.3); $('#zout').onclick = () => zoomAt(0, 0, 1/1.3); $('#zfit').onclick = () => { setFocus(null); $('#jout').hidden = true; fit(); };
+function setMode(f, quiet) { flat = f; $('#m3d').classList.toggle('on', !f); $('#mflat').classList.toggle('on', f); alpha = Math.max(alpha, .8);
+  if (!f) nodes.forEach(n => { if (n.kind !== 'core') n.vy += (Math.random() - .5) * 60; });
+  try { localStorage.setItem('sb-mode', f ? 'flat' : '3d'); } catch (e) {}
+  if (!quiet) { fit(focus ? focus.ids : null); toast(f ? '평면 모드입니다. 끌면 화면이 이동합니다.' : '3D 모드입니다. 끌면 회전합니다.'); } }
+$('#m3d').onclick = () => setMode(false); $('#mflat').onclick = () => setMode(true);
 
 /* ---------- sidebar & vault ---------- */
 let vf = { folder:null, tag:null };
@@ -549,6 +570,8 @@ document.addEventListener('click', e => {
   if (b.dataset.view) show(b.dataset.view);
   else if (b.dataset.folder) { vf = { folder:b.dataset.folder, tag:null }; show('vault'); }
   else if (b.dataset.tag) { show('graph'); ask('#' + b.dataset.tag); }
+  else if (b.dataset.pick) pick(b.dataset.pick);
+  else if (b.dataset.back) ask(lastQ);
   else if (b.dataset.id) { $('#app').classList.remove('nav-open'); openNote(b.dataset.id); }
   else if (b.id === 'vclear') { vf = { folder:null, tag:null }; renderVault(); }
 });
@@ -603,7 +626,7 @@ function snippet(n, tk) {
   let h = esc(cut); tk.forEach(t => { const w = esc(t.replace('#', '')); if (w) h = h.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), m => `<mark>${m}</mark>`); });
   return h;
 }
-let voiceOn = true, typeT, actx;
+let voiceOn = true, typeT, actx, lastQ = '';
 function blip(f0, f1, d, v) { if (!voiceOn) return; try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const o = actx.createOscillator(), g = actx.createGain(), n = actx.currentTime;
   o.type = 'sine'; o.frequency.setValueAtTime(f0, n); o.frequency.exponentialRampToValueAtTime(f1, n + d); g.gain.setValueAtTime(v || .05, n); g.gain.exponentialRampToValueAtTime(.0001, n + d); o.connect(g); g.connect(actx.destination); o.start(n); o.stop(n + d); } catch (e) {} }
 function speak(text) { if (!voiceOn || !('speechSynthesis' in window)) return; try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/[「」“”#]/g, ' ')); u.lang = 'ko-KR'; u.rate = 1.05; u.pitch = .9; speechSynthesis.speak(u); } catch (e) {} }
@@ -614,6 +637,10 @@ function say(text, html, action) {
   if (reduce) { p.textContent = text; p.classList.add('done'); } else typeT = setInterval(() => { p.textContent = text.slice(0, i += 2); if (i >= text.length) { clearInterval(typeT); p.classList.add('done'); talking = false; } }, 22);
   speak(text);
 }
+function pick(id) { const n = byId(id); if (!n || !nodeById.get(id)) return; show('graph');
+  const d = new Date(n.updated), body = n.body.replace(/\[\[|\]\]/g, '');
+  say(`「${n.title || '제목 없음'}」을 확대했습니다.`, `<div class="jcard"><div class="jmeta"><i style="background:${FOLD[n.folder].color}"></i>${FOLD[n.folder].name} · ${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}${n.tags.length ? ' · ' + esc(n.tags.map(t => '#' + t).join(' ')) : ''}</div><p>${esc(body.slice(0, 280))}${body.length > 280 ? '…' : ''}</p><div class="jrow"><button class="jact" data-id="${n.id}">열어서 편집</button>${lastQ ? '<button class="jact ghost" data-back="1">결과 목록으로</button>' : ''}</div></div>`);
+  setFocus(new Set([id])); blip(900, 1500, .12, .04); }
 function ask(raw) {
   const q = raw.trim(); if (!q) return; show('graph'); $('#jq').value = '';
   const bar = $('#jbar'); bar.classList.add('busy'); setTimeout(() => bar.classList.remove('busy'), 900); blip(620, 1240, .14); setTimeout(() => blip(1240, 1860, .2, .03), 160);
@@ -628,15 +655,15 @@ function ask(raw) {
   if (open && hits.length) { setFocus(new Set([hits[0].n.id])); openNote(hits[0].n.id); say(`「${hits[0].n.title}」을 열었습니다.`); return; }
   if (!hits.length) { setFocus(null);
     say(db.notes.length ? `“${q}”와 맞는 기록을 찾지 못했습니다. 지금 바로 남겨 둘까요?` : '아직 저장된 노트가 없습니다. 이 내용으로 첫 노트를 만들까요?', '', { label:'이 내용으로 새 노트', run:() => openNote(newNote(q, '', 'idea').id, true) }); return; }
-  const ids = new Set(hits.map(h => h.n.id)); tk.filter(t => t[0] === '#' && nodeById.has(t)).forEach(t => ids.add(t));
+  lastQ = q; const ids = new Set(hits.map(h => h.n.id)); tk.filter(t => t[0] === '#' && nodeById.has(t)).forEach(t => ids.add(t));
   const label = tk.map(t => t.replace('#', '')).join(' · ');
   const text = `“${label}” 관련 기록 ${hits.length}건을 찾았습니다. 가장 가까운 건 「${hits[0].n.title}」입니다.`;
-  say(text, hits.map(h => `<button data-id="${h.n.id}"><i style="background:${FOLD[h.n.folder].color}"></i><b>${esc(h.n.title || '제목 없음')}</b><small>${snippet(h.n, tk)}</small></button>`).join(''));
+  say(text, hits.map(h => `<button data-pick="${h.n.id}"><i style="background:${FOLD[h.n.folder].color}"></i><b>${esc(h.n.title || '제목 없음')}</b><small>${snippet(h.n, tk)}</small></button>`).join(''));
   setFocus(ids);
 }
 $('#jbar').addEventListener('submit', e => { e.preventDefault(); ask($('#jq').value); });
 $('#hints').addEventListener('click', e => { if (e.target.tagName === 'BUTTON') ask(e.target.textContent); });
-$('#jclose').onclick = () => { $('#jout').hidden = true; talking = false; clearInterval(typeT); setFocus(null); fit(); try { speechSynthesis.cancel(); } catch (e) {} };
+$('#jclose').onclick = () => { $('#jout').hidden = true; talking = false; lastQ = ''; clearInterval(typeT); setFocus(null); fit(); try { speechSynthesis.cancel(); } catch (e) {} };
 $('#jvoice').onclick = e => { voiceOn = !voiceOn; e.currentTarget.classList.toggle('on', voiceOn); if (!voiceOn) try { speechSynthesis.cancel(); } catch (x) {} toast(voiceOn ? '음성 답변을 켰습니다.' : '음성 답변을 껐습니다.'); };
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null;
 $('#jmic').onclick = () => {
@@ -665,6 +692,7 @@ $('#b-wipe').onclick = e => { const b = e.currentTarget; if (!b.dataset.sure) { 
 
 /* ---------- boot ---------- */
 load(); resize(); refresh();
+try { if (localStorage.getItem('sb-mode') === 'flat') setMode(true, true); } catch (e) {}
 for (let i = 0; i < 400; i++) step();
 alpha = .5; hudTop = $('.ghead').offsetHeight - 16; fit(); if (camTo) { Object.assign(cam, camTo); camTo = null; } requestAnimationFrame(draw);
 })();
