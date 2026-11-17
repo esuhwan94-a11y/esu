@@ -247,7 +247,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
           <div class="jres" id="jres"></div>
         </div>
         <div class="hints" id="hints">
-          <button>출고지시 뭐 있어?</button><button>메일 확인해줘</button><button>이번 달 일정 뭐 있지?</button><button>사내 재고 웹 만들려는데 어떤 스킬?</button><button>내일 견적서 보내기 메모해줘</button>
+          <button>대리점 출고준비 목록</button><button>메일 확인해줘</button><button>이번 달 일정 뭐 있지?</button><button>사내 재고 웹 만들려는데 어떤 스킬?</button><button>내일 견적서 보내기 메모해줘</button>
         </div>
         <form class="jbar" id="jbar">
           <span class="orb" aria-hidden="true"></span>
@@ -801,19 +801,22 @@ const jobState = j => j.shipped_at ? '출고완료' : j.dispatched_at ? '배차�
 async function shipCheck(q) { setFocus(null);
   const kw = tokens(q).filter(t => !/(출고|출하|지시|현황|대기|남은|남았|업체|어디|뭐|무슨|어떤|있|알려|보여|확인|오늘|내일|모레|어제|이번|다음|금주|요일|완료|준비|배차|목록|지금|아직|해줘|나갈|나가|보낼|좀|^건$|^거$|^것$|^주$)/.test(t)).map(t => t.replace(/[^0-9a-zA-Z가-힣()㈜]/g, '')).filter(t => t.length >= 2);
   const done = /완료/.test(q) && !/준비/.test(q), cols = 'company, note, pallets, shipping_mode, payment, created_at, ready_at, dispatched_at, shipped_at', day = "date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul'";
-  const pending = `select ${cols} from public.jobs where shipped_at is null order by created_at desc limit 40`; let query = pending, label = '아직 출고되지 않은 지시', extra = '';
-  if (kw.length) { query = `select ${cols} from public.jobs where ${kw.map(k => `company ilike '%${k}%' or note ilike '%${k}%'`).join(' or ')} order by created_at desc limit 40`; label = `“${kw.join(' ')}” 출고`; }
-  else if (done && /어제/.test(q)) { query = `select ${cols} from public.jobs where shipped_at >= ${day} - interval '1 day' and shipped_at < ${day} order by shipped_at desc limit 40`; label = '어제 출고완료된'; }
-  else if (done) { query = `select ${cols} from public.jobs where shipped_at >= ${day} order by shipped_at desc limit 40`; label = '오늘 출고완료된'; }
-  else if (/내일|모레|다음|나갈|보낼/.test(q)) { label = '앞으로 나갈(아직 출고 전) 지시'; extra = ' 출고 예정일은 따로 저장돼 있지 않아 미출고 건 전체를 보여드립니다.'; }
+  const pending = `select ${cols} from public.jobs where shipped_at is null order by (ready_at is not null), created_at desc limit 60`; let query = pending, label = '대리점 출고준비 목록', extra = '', prep = true;
+  if (kw.length) { query = `select ${cols} from public.jobs where ${kw.map(k => `company ilike '%${k}%' or note ilike '%${k}%'`).join(' or ')} order by created_at desc limit 40`; label = `“${kw.join(' ')}” 출고`; prep = false; }
+  else if (done && /어제/.test(q)) { query = `select ${cols} from public.jobs where shipped_at >= ${day} - interval '1 day' and shipped_at < ${day} order by shipped_at desc limit 40`; label = '어제 출고완료된'; prep = false; }
+  else if (done) { query = `select ${cols} from public.jobs where shipped_at >= ${day} order by shipped_at desc limit 40`; label = '오늘 출고완료된'; prep = false; }
   setBusy(true); say('출하관리 데이터를 확인하고 있습니다.');
   try { let rows = await sql(query);
-    if (!rows.length && kw.length) { rows = await sql(pending); extra = ` “${kw.join(' ')}”로는 찾지 못해 미출고 건 전체를 보여드립니다.`; label = '아직 출고되지 않은 지시'; }
+    if (!rows.length && kw.length) { rows = await sql(pending); extra = ` “${kw.join(' ')}”로는 찾지 못해 출고준비 목록 전체를 보여드립니다.`; label = '대리점 출고준비 목록'; prep = true; }
     setBusy(false);
     if (!rows.length) { say(`${label} 건이 없습니다.`); return; }
     const cnt = {}; rows.forEach(j => { const st = jobState(j); cnt[st] = (cnt[st] || 0) + 1; }); const names = [...new Set(rows.map(j => j.company))], due = j => (String(j.note || '').match(/납기\s*(\d{1,2}\/\d{1,2})/) || [])[1];
+    const row = j => `<div class="sk"><b>${esc(j.company)} <small>${jobState(j)}${j.shipping_mode ? ' · ' + esc(j.shipping_mode) : ''}${j.payment ? ' ' + esc(j.payment) : ''}${j.pallets ? ' · ' + j.pallets + 'P' : ''}${due(j) ? ' · 납기 ' + due(j) : ''}</small></b><small>${esc(String(j.note || '').slice(0, 200))}<br>등록 ${pgDate(j.created_at)}${j.ready_at ? ' · 준비 ' + pgDate(j.ready_at) : ''}${j.shipped_at ? ' · 출고 ' + pgDate(j.shipped_at) : ''}</small></div>`;
+    if (prep) { const todo = rows.filter(j => !j.ready_at), wait = rows.filter(j => j.ready_at);
+      say(`대리점 출고준비 목록은 ${rows.length}건입니다. 준비해야 할 건 ${todo.length}건${todo.length ? ', ' + todo.map(j => j.company).slice(0, 6).join(', ') : ''}. 준비 끝나고 출고 대기 ${wait.length}건${wait.length ? ', ' + wait.map(j => j.company).slice(0, 6).join(', ') : ''}.${extra}`,
+        (todo.length ? `<div class="skh">준비해야 할 건 · ${todo.length}</div>` + todo.map(row).join('') : '') + (wait.length ? `<div class="skh">준비 완료 · 출고 대기 · ${wait.length}</div>` + wait.map(row).join('') : '')); return; }
     say(`${label} 건은 ${rows.length}건입니다. ${Object.entries(cnt).map(([k, v]) => `${k} ${v}건`).join(', ')}. 업체는 ${names.slice(0, 6).join(', ')}${names.length > 6 ? ' 외 ' + (names.length - 6) + '곳' : ''}입니다.${extra}`,
-      rows.map(j => `<div class="sk"><b>${esc(j.company)} <small>${jobState(j)}${j.shipping_mode ? ' · ' + esc(j.shipping_mode) : ''}${j.payment ? ' ' + esc(j.payment) : ''}${j.pallets ? ' · ' + j.pallets + 'P' : ''}${due(j) ? ' · 납기 ' + due(j) : ''}</small></b><small>${esc(String(j.note || '').slice(0, 200))}<br>등록 ${pgDate(j.created_at)}${j.ready_at ? ' · 준비 ' + pgDate(j.ready_at) : ''}${j.shipped_at ? ' · 출고 ' + pgDate(j.shipped_at) : ''}</small></div>`).join(''));
+      rows.map(row).join(''));
   } catch (e) { connErr(e, SB); } }
 async function driveSearch(q) { setFocus(null); const kw = tokens(q).filter(t => !/^(드라이브|구글|구글드라이브|파일|문서|찾아|찾아줘|검색|검색해줘|어디|있어|보여줘|열어줘|좀|해줘)$/.test(t)).join(' ').replace(/['\\]/g, ' ').trim();
   if (!kw) { say('찾을 파일 이름이나 내용을 같이 말해 주세요. 예: “드라이브에서 단가표 찾아줘”'); return; }
@@ -940,7 +943,7 @@ function ask(raw) {
   if (/(일정|캘린더|스케줄|약속)/.test(q) && /(뭐|알려|보여|확인|있지|있어|있나|읽어|체크)/.test(q) && !/(메모|노트|채널|찾아)/.test(q)) { calCheck(q); return; }
   if (/(슬랙|slack)/i.test(q) && /(확인|읽어|보여|뭐|알려|왔|있어|체크)/.test(q) && !/(메모|노트)/.test(q)) { slackCheck(q); return; }
   if (/드라이브/.test(q) && /(찾아|검색|어디|있어|보여)/.test(q)) { driveSearch(q); return; }
-  if (/(출고|출하|배차)/.test(q) && /(지시|현황|대기|남은|업체|어디|뭐|있|알려|보여|확인|완료|건|나갈|예정|말해)/.test(q) && !/(메모해|노트|기록|찾아|메일|관련|있었)/.test(q)) { shipCheck(q); return; }
+  if (/(출고|출하|배차)/.test(q) && /(지시|현황|대기|남은|업체|어디|뭐|있|알려|보여|확인|완료|건|나갈|예정|말해|준비|대리점|목록|리스트)/.test(q) && !/(메모해|노트|기록|찾아|메일|관련|있었)/.test(q)) { shipCheck(q); return; }
   if (/스킬/.test(q) && /(추천|어떤|뭐|무슨|쓰면|써야|사용하|사용해|배열|골라|필요)/.test(q)) { advise(q); return; }
   if (/^(전체|리셋|초기화|전체 ?보기|처음으로)/.test(q)) { setFocus(null); $('#jout').hidden = true; fit(); say('전체 그래프로 돌아왔습니다. 노트 ' + db.notes.length + '개가 연결되어 있습니다.'); return; }
   if ((m = q.match(/^(?:새 ?노트|메모|기록)\s*[:：]?\s+(.+)/)) || (m = q.match(/^(.+?)\s*(?:라고|이라고)?\s*(?:메모해 ?줘|기록해 ?줘|적어 ?줘|저장해 ?줘|메모)$/))) {
