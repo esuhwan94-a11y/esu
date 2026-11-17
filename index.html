@@ -102,13 +102,14 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .jres .jact:hover{background:var(--accent-hi)}
 .jres .jact.ghost,.jres .jact.ghost:hover{background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
 .sk{display:grid;gap:2px;padding:8px 2px;border-bottom:1px solid var(--line)}.sk b{font-weight:600}.sk em{font-style:normal;font-family:var(--mono);font-size:12px;color:var(--accent-hi)}.sk small{color:var(--muted);font-size:12.5px;line-height:1.5}
+.jres .sk small{grid-column:1;display:block;overflow:visible}.jres .sk b{white-space:normal;overflow:visible}.jres .sk b small{display:inline;font-weight:400}
 .skh{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;color:var(--accent);margin:12px 0 2px}
 .jres textarea{width:100%;height:120px;margin-top:8px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12px}
 .jmeta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}.jmeta i{width:7px;height:7px;border-radius:50%}
 .jcard p{margin:8px 0 2px;line-height:1.65;color:#d2c3cb;white-space:pre-wrap;overflow-wrap:anywhere}
 .jres .wl,.jres .wl:hover{display:inline;padding:0 1px;border:0;background:none;color:var(--accent-hi);text-decoration:underline;text-underline-offset:3px;font:inherit;text-align:left}
-.jcard a,.elinks a{color:var(--accent-hi);overflow-wrap:anywhere}
-.jcard a{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;margin:2px 0;border:1px solid rgba(255,79,163,.4);border-radius:99px;text-decoration:none;font-size:12.5px}
+.jcard a,.sk a,.elinks a{color:var(--accent-hi);overflow-wrap:anywhere}
+.jcard a,.sk a{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;margin:2px 0;border:1px solid rgba(255,79,163,.4);border-radius:99px;text-decoration:none;font-size:12.5px}
 .elinks a.tag{text-decoration:none}
 .jrow{display:flex;flex-wrap:wrap;gap:8px}
 .jbar{display:flex;align-items:center;gap:8px;background:rgba(16,12,9,.92);border:1px solid rgba(255,79,163,.55);border-radius:10px;padding:5px 6px 5px 12px;box-shadow:0 0 0 4px rgba(255,79,163,.06),0 8px 30px rgba(0,0,0,.5)}
@@ -246,7 +247,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
           <div class="jres" id="jres"></div>
         </div>
         <div class="hints" id="hints">
-          <button>출하 관련 뭐 있었지?</button><button>성적서 찾아줘</button><button>사내 재고 웹 만들려는데 어떤 스킬?</button><button>내일 견적서 보내기 메모해줘</button>
+          <button>출하 관련 뭐 있었지?</button><button>메일 확인해줘</button><button>이번 달 일정 뭐 있지?</button><button>사내 재고 웹 만들려는데 어떤 스킬?</button><button>내일 견적서 보내기 메모해줘</button>
         </div>
         <form class="jbar" id="jbar">
           <span class="orb" aria-hidden="true"></span>
@@ -607,6 +608,10 @@ document.addEventListener('click', e => {
   else if (b.dataset.tag) { show('graph'); ask('#' + b.dataset.tag); }
   else if (b.dataset.sel) { selSet.has(b.dataset.sel) ? selSet.delete(b.dataset.sel) : selSet.add(b.dataset.sel); renderVault(); }
   else if (b.dataset.copy) copyPrompt();
+  else if (b.dataset.mread) mailRead(+b.dataset.mread);
+  else if (b.dataset.mdel) mailDelAsk([+b.dataset.mdel]);
+  else if (b.dataset.mdelok) mailDelDo();
+  else if (b.dataset.mback) { pendingDel = []; mailBack(); }
   else if (b.dataset.pick) pick(b.dataset.pick);
   else if (b.dataset.back) ask(lastQ);
   else if (b.dataset.id) { $('#app').classList.remove('nav-open'); openNote(b.dataset.id); }
@@ -716,6 +721,70 @@ function say(text, html, action) {
   if (reduce) { p.textContent = text; p.classList.add('done'); } else typeT = setInterval(() => { p.textContent = text.slice(0, i += 2); if (i >= text.length) { clearInterval(typeT); p.classList.add('done'); talking = false; } }, 22);
   speak(text);
 }
+/* ---------- live mail and calendar through the viewer's own connectors ---------- */
+let mcp = null, mailList = [], pendingDel = [];
+const GM = 'Gmail', GC = 'Google Calendar', pad2 = n => String(n).padStart(2, '0'), DOW = '일월화수목금토';
+async function conn(server, tool, input) { if (!mcp) throw { code: 'no_mcp' }; const r = await mcp.callTool(server, tool, input); let p = r && r.payload !== undefined ? r.payload : r; if (typeof p === 'string') { try { p = JSON.parse(p); } catch (e) {} } return p || {}; }
+function connErr(e, server, writing) { const c = e && e.code; setBusy(false);
+  say(c === 'no_mcp' ? `${server} 연결은 claude.ai 링크로 열었을 때만 됩니다. 지금 화면에서는 쓸 수 없습니다.`
+    : c === 'needs_reauth' ? `${server} 연결이 만료됐습니다. claude.ai 설정의 커넥터에서 ${server}를 다시 연결해 주세요.`
+    : c === 'server_not_connected' || c === 'server_not_found' ? `${server}가 연결돼 있지 않습니다. claude.ai 설정의 커넥터에서 ${server}를 추가해 주세요.`
+    : c === 'not_in_manifest' ? `이 화면에서 ${server} 사용을 허용하지 않은 상태입니다. 화면 위 권한 메뉴에서 허용하면 됩니다.`
+    : c === 'approval_required' ? `${server}를 쓰려면 허용이 필요합니다. 다시 요청하고 뜨는 창에서 허용해 주세요.`
+    : c === 'blocked_by_policy' ? `조직 설정에서 이 ${server} 기능을 막아 두었습니다.`
+    : c === 'selection_required' ? `${server} 계정이 여러 개 연결돼 있습니다. 뜨는 창에서 하나를 골라 주세요.`
+    : writing ? `${server}에서 답을 받지 못했습니다. 처리됐는지 확실하지 않으니 목록을 다시 확인해 주세요.`
+    : c === 'tool_error' ? `${server}가 요청을 처리하지 못했습니다. ${(e.message || '').slice(0, 80)}` : `${server}에서 답을 받지 못했습니다. 잠시 뒤 다시 시도해 주세요.`); }
+const setBusy = on => $('#jbar').classList.toggle('busy', on);
+const mwho = m => { const d = (m.addressDisplayNames || []).find(a => a.emailAddress === m.sender); return (d && d.displayName) || (m.sender || '').split('@')[0] || '보낸 사람 없음'; };
+const mdate = v => { const d = new Date(v); return isNaN(d) ? '' : `${d.getMonth() + 1}.${d.getDate()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const mailHtml = () => mailList.map((t, i) => `<div class="sk"><b>${i + 1}. ${esc(t.from)} <small>${t.when}</small></b><small><span style="color:var(--fg)">${esc(t.subject)}</span><br>${esc(t.snippet)}</small><div class="jrow"><button class="jact ghost" data-mread="${i}">읽기</button><button class="jact ghost" data-mdel="${i}">지우기</button>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">↗ 메일 열기</a>` : ''}</div></div>`).join('');
+const mailBack = () => say(mailList.length ? `메일 ${mailList.length}통입니다.` : '목록에 남은 메일이 없습니다.', mailHtml());
+async function mailCheck(q) { setFocus(null); const unread = /안 ?읽/.test(q), kw = tokens(q).filter(t => !/^(메일|이메일|편지함|받은|확인|확인해줘|읽어|읽어줘|보여줘|왔어|온거|알려줘|최근|새로|새|안읽은|안|읽은|있어|뭐|내|좀|해줘|체크)$/.test(t)).join(' ');
+  setBusy(true); say('메일함을 확인하고 있습니다.');
+  try { const p = await conn(GM, 'search_threads', { query: `in:inbox ${unread ? 'is:unread ' : ''}${kw || 'newer_than:14d'} -category:promotions -category:social`, pageSize: 8, view: 'THREAD_VIEW_SUMMARY' });
+    mailList = (p.threads || []).map(t => { const m = (t.messages || [])[0] || {}; return { id: t.id, from: mwho(m), subject: m.subject || '(제목 없음)', snippet: m.snippet || '', when: mdate(m.date), url: t.viewUrl || m.viewUrl || '' }; });
+    setBusy(false);
+    if (!mailList.length) say(`${unread ? '안 읽은 ' : ''}${kw ? '“' + kw + '” ' : ''}메일이 없습니다.`);
+    else say(`${unread ? '안 읽은 ' : ''}메일 ${mailList.length}통입니다. ` + mailList.slice(0, 3).map((t, i) => `${i + 1}번, ${t.from}, ${t.subject}.`).join(' '), mailHtml());
+  } catch (e) { connErr(e, GM); } }
+async function mailRead(i) { const t = mailList[i]; if (!t) return; setBusy(true); say(`「${t.subject}」 메일을 여는 중입니다.`);
+  try { const p = await conn(GM, 'get_thread', { threadId: t.id, messageFormat: 'PLAIN_TEXT' }), ms = p.messages || (p.thread && p.thread.messages) || [], m = ms[ms.length - 1] || {};
+    const body = String(m.plaintextBody || m.snippet || t.snippet || '').replace(/\n{3,}/g, '\n\n').trim().slice(0, 2500); setBusy(false);
+    say(`${t.from}에게서 온 메일입니다. ${t.subject}.`, `<div class="jcard"><div class="jmeta">${esc(t.from)} · ${t.when}${ms.length > 1 ? ' · 대화 ' + ms.length + '통 중 마지막' : ''}</div><p>${esc(body) || '본문이 비어 있습니다.'}</p><div class="jrow"><button class="jact ghost" data-mdel="${i}">지우기</button><button class="jact ghost" data-mback="1">목록으로</button>${t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">↗ 메일 열기</a>` : ''}</div></div>`);
+    speak(`${t.from}에게서 온 메일입니다. ${t.subject}. ${body.slice(0, 700)}`);
+  } catch (e) { connErr(e, GM); } }
+function mailDelAsk(idx) { pendingDel = idx.map(i => mailList[i]).filter(Boolean); if (!pendingDel.length) return;
+  say(`메일 ${pendingDel.length}통을 휴지통으로 옮길까요? 30일 안에는 Gmail 휴지통에서 되살릴 수 있습니다.`, `<div class="jcard"><p>${pendingDel.map(t => esc(t.from + ' · ' + t.subject)).join('\n')}</p><div class="jrow"><button class="jact" data-mdelok="1">휴지통으로 옮기기</button><button class="jact ghost" data-mback="1">취소</button></div></div>`); }
+async function mailDelDo() { const list = pendingDel; pendingDel = []; if (!list.length) return; setBusy(true); let ok = 0;
+  try { for (const t of list) { await conn(GM, 'trash_thread', { threadId: t.id }); ok++; mailList = mailList.filter(x => x.id !== t.id); }
+    setBusy(false); say(`메일 ${ok}통을 휴지통으로 옮겼습니다.`, mailHtml());
+  } catch (e) { if (ok) toast(`${ok}통은 옮겼습니다.`); connErr(e, GM, true); } }
+function mailDelete(q) { if (!mailList.length) { say('먼저 “메일 확인해줘”로 목록을 불러온 뒤, 지울 메일을 골라 주세요.'); return; }
+  let idx = []; const nums = q.match(/\d+/g); const ord = { 첫: 0, 두: 1, 세: 2, 네: 3, 다섯: 4 };
+  if (/(다|전부|모두|싹)\s*(지워|삭제)/.test(q)) idx = mailList.map((_, i) => i);
+  else if (nums) idx = nums.map(n => n - 1).filter(i => mailList[i]);
+  else { const o = q.match(/(첫|두|세|네|다섯)\s*번/); if (o) idx = [ord[o[1]]];
+    else { const kw = tokens(q).filter(t => !/^(메일|이메일|지워|지워줘|삭제|삭제해줘|휴지통|해줘|좀|그|이|저)$/.test(t)); if (kw.length) idx = mailList.map((t, i) => kw.some(k => (t.from + ' ' + t.subject).toLowerCase().includes(k)) ? i : -1).filter(i => i >= 0); } }
+  if (!idx.length) { say('어떤 메일을 지울까요? 목록에서 “지우기”를 누르거나 “2번 메일 지워줘”처럼 말해 주세요.', mailHtml()); return; }
+  mailDelAsk(idx); }
+async function calCheck(q) { setFocus(null); const n = new Date(), d0 = new Date(n.getFullYear(), n.getMonth(), n.getDate()), plus = (d, k) => { const x = new Date(d); x.setDate(x.getDate() + k); return x; }; let a, b, label;
+  if (/다음 ?달/.test(q)) { a = new Date(n.getFullYear(), n.getMonth() + 1, 1); b = new Date(n.getFullYear(), n.getMonth() + 2, 1); label = '다음 달'; }
+  else if (/이번 ?달|이달|한 ?달|월간/.test(q)) { a = new Date(n.getFullYear(), n.getMonth(), 1); b = new Date(n.getFullYear(), n.getMonth() + 1, 1); label = '이번 달'; }
+  else if (/다음 ?주/.test(q)) { a = plus(d0, 8 - (d0.getDay() || 7)); b = plus(a, 7); label = '다음 주'; }
+  else if (/이번 ?주|금주/.test(q)) { a = plus(d0, 1 - (d0.getDay() || 7)); b = plus(a, 7); label = '이번 주'; }
+  else if (/내일/.test(q)) { a = plus(d0, 1); b = plus(d0, 2); label = '내일'; }
+  else if (/오늘/.test(q)) { a = d0; b = plus(d0, 1); label = '오늘'; }
+  else { a = d0; b = plus(d0, 14); label = '앞으로 2주'; }
+  const iso = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T00:00:00`;
+  setBusy(true); say('캘린더를 확인하고 있습니다.');
+  try { const p = await conn(GC, 'list_events', { startTime: iso(a), endTime: iso(b), pageSize: 50, orderBy: 'startTime' });
+    const ev = (p.events || []).filter(e => e.status !== 'cancelled').map(e => { const st = e.start || {}, dt = new Date(st.dateTime || st.date + 'T00:00:00'); return { t: e.summary || '(제목 없음)', dt, all: !st.dateTime, url: e.htmlLink, loc: e.location || '' }; }).sort((x, y) => x.dt - y.dt);
+    const when = e => `${e.dt.getMonth() + 1}월 ${e.dt.getDate()}일 ${DOW[e.dt.getDay()]}요일${e.all ? '' : ' ' + e.dt.getHours() + '시' + (e.dt.getMinutes() ? ' ' + e.dt.getMinutes() + '분' : '')}`; setBusy(false);
+    if (!ev.length) say(`${label}에는 등록된 일정이 없습니다.`);
+    else say(`${label} 일정은 ${ev.length}건입니다. ` + ev.slice(0, 3).map(e => `${when(e)}, ${e.t}.`).join(' '), ev.map(e => `<div class="sk"><b>${e.dt.getMonth() + 1}.${e.dt.getDate()} (${DOW[e.dt.getDay()]}) ${e.all ? '종일' : pad2(e.dt.getHours()) + ':' + pad2(e.dt.getMinutes())} · ${esc(e.t)}</b>${e.loc ? `<small>${esc(e.loc)}</small>` : ''}${e.url ? `<div class="jrow"><a href="${esc(e.url)}" target="_blank" rel="noopener">↗ 캘린더에서 열기</a></div>` : ''}</div>`).join(''));
+  } catch (e) { connErr(e, GC); } }
+
 /* ---------- skill advisor: which skills to use for a task, in order, and what is missing ---------- */
 const STAGE = ['', '조사·기획', '디자인', '개발·데이터', '점검', '자동화', '문서', '영업·홍보'];
 const SK = [ // [name, stage, keywords, what it does, how to ask]
@@ -822,6 +891,8 @@ function ask(raw) {
     if (!hit) { say(`“${m[1]}”와 맞는 노트를 찾지 못했습니다.`); return; }
     const mark = () => { hit.n.locked = true; save(); refresh(); say(`「${hit.n.title}」을 중요 노트로 잠갔습니다. 열 때 비밀번호를 묻습니다.`); setFocus(new Set([hit.n.id])); };
     if (!db.pw) lockDialog('set', mark); else mark(); return; }
+  if (/(메일|이메일|편지함)/.test(q) && !/(메모|노트|찾아)/.test(q)) { if (/(지워|삭제|휴지통)/.test(q)) { mailDelete(q); return; } if (/(확인|읽어|보여|왔|온 ?거|있어|알려|체크|뭐)/.test(q)) { mailCheck(q); return; } }
+  if (/(일정|캘린더|스케줄|약속)/.test(q) && /(뭐|알려|보여|확인|있지|있어|있나|읽어|체크)/.test(q) && !/(메모|노트|채널|찾아)/.test(q)) { calCheck(q); return; }
   if (/스킬/.test(q) && /(추천|어떤|뭐|무슨|쓰면|써야|사용하|사용해|배열|골라|필요)/.test(q)) { advise(q); return; }
   if (/^(전체|리셋|초기화|전체 ?보기|처음으로)/.test(q)) { setFocus(null); $('#jout').hidden = true; fit(); say('전체 그래프로 돌아왔습니다. 노트 ' + db.notes.length + '개가 연결되어 있습니다.'); return; }
   if ((m = q.match(/^(?:새 ?노트|메모|기록)\s*[:：]?\s+(.+)/)) || (m = q.match(/^(.+?)\s*(?:라고|이라고)?\s*(?:메모해 ?줘|기록해 ?줘|적어 ?줘|저장해 ?줘|메모)$/))) {
@@ -877,6 +948,7 @@ if (window.claude && window.claude.use) {
     d.onPartial(e => { $('#jq').value = e.text; });
     d.onFinal(e => { const t = (e.text || '').trim(); if (t) { d.stop().catch(() => {}); ask(t); } });
     d.onState(e => { $('#jmic').classList.toggle('rec', e.state === 'listening' || e.state === 'starting'); if (e.state === 'idle' && e.reason === 'unavailable') toast('이 기기에서는 한국어 받아쓰기를 쓸 수 없습니다. 글로 입력해 주세요.'); }); }).catch(() => {});
+  window.claude.use('mcp').then(m => { mcp = m; }).catch(() => {});
   window.claude.use('tts').then(t => { if (!t) return; ctts = t; t.onState(e => { ttsOn = e.state === 'speaking'; }); }).catch(() => {});
 }
 
