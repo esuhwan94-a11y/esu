@@ -93,6 +93,9 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .jres .jact{display:inline-flex;margin-top:8px;padding:9px 14px;border-radius:8px;border:0;background:var(--accent);color:#2a0414;font-weight:600}
 .jres .jact:hover{background:var(--accent-hi)}
 .jres .jact.ghost,.jres .jact.ghost:hover{background:var(--panel2);color:var(--fg);border:1px solid var(--line)}
+.sk{display:grid;gap:2px;padding:8px 2px;border-bottom:1px solid var(--line)}.sk b{font-weight:600}.sk em{font-style:normal;font-family:var(--mono);font-size:12px;color:var(--accent-hi)}.sk small{color:var(--muted);font-size:12.5px;line-height:1.5}
+.skh{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;color:var(--accent);margin:12px 0 2px}
+.jres textarea{width:100%;height:120px;margin-top:8px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:12px}
 .jmeta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}.jmeta i{width:7px;height:7px;border-radius:50%}
 .jcard p{margin:8px 0 2px;line-height:1.65;color:#d2c3cb;white-space:pre-wrap;overflow-wrap:anywhere}
 .jrow{display:flex;flex-wrap:wrap;gap:8px}
@@ -199,6 +202,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
           <button data-view="vault"><svg class="i" viewBox="0 0 24 24"><path d="M3 7h18v4H3zM5 11v9h14v-9M10 15h4"/></svg>보관함</button>
           <button data-view="graph" class="on"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 11l8-4M8 13l8 4"/></svg>그래프</button>
           <button id="nav-search"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>검색</button>
+          <button id="nav-skill"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l2.5 5.5L20 9.3l-4 4 1 5.7-5-2.8-5 2.8 1-5.7-4-4 5.5-.8z"/></svg>스킬 추천</button>
           <button id="nav-new"><svg class="i" viewBox="0 0 24 24"><path d="M12 5H6a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1v-6M18.5 3.5l2 2L12 14l-3 1 1-3z"/></svg>새 노트</button>
         </div>
       </div>
@@ -230,7 +234,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
           <div class="jres" id="jres"></div>
         </div>
         <div class="hints" id="hints">
-          <button>출하 관련 뭐 있었지?</button><button>성적서 찾아줘</button><button>#클로드</button><button>내일 견적서 보내기 메모해줘</button>
+          <button>출하 관련 뭐 있었지?</button><button>성적서 찾아줘</button><button>사내 재고 웹 만들려는데 어떤 스킬?</button><button>내일 견적서 보내기 메모해줘</button>
         </div>
         <form class="jbar" id="jbar">
           <span class="orb" aria-hidden="true"></span>
@@ -589,6 +593,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.folder) { vf = { folder:b.dataset.folder, tag:null }; show('vault'); }
   else if (b.dataset.tag) { show('graph'); ask('#' + b.dataset.tag); }
   else if (b.dataset.sel) { selSet.has(b.dataset.sel) ? selSet.delete(b.dataset.sel) : selSet.add(b.dataset.sel); renderVault(); }
+  else if (b.dataset.copy) copyPrompt();
   else if (b.dataset.pick) pick(b.dataset.pick);
   else if (b.dataset.back) ask(lastQ);
   else if (b.dataset.id) { $('#app').classList.remove('nav-open'); openNote(b.dataset.id); }
@@ -597,6 +602,7 @@ document.addEventListener('click', e => {
 $('#vq').oninput = renderVault;
 $('#menu').onclick = () => $('#app').classList.toggle('nav-open'); $('#scrim').onclick = () => $('#app').classList.remove('nav-open');
 $('#nav-search').onclick = () => { show('graph'); $('#jq').focus(); };
+$('#nav-skill').onclick = () => { show('graph'); $('#jq').value = ''; $('#jq').placeholder = '하려는 작업 + “어떤 스킬?”  예: 사내 재고 웹 만들려는데 어떤 스킬?'; $('#jq').focus(); };
 $('#nav-new').onclick = $('#v-new').onclick = () => openNote(newNote('', '', vf.folder || 'idea').id, true);
 $('#clear-sample').onclick = () => { db = { notes:[], sample:false }; save(); setFocus(null); $('#jout').hidden = true; refresh(); toast('예시를 비웠습니다. 첫 노트를 남겨 보세요.'); };
 
@@ -693,6 +699,69 @@ function say(text, html, action) {
   if (reduce) { p.textContent = text; p.classList.add('done'); } else typeT = setInterval(() => { p.textContent = text.slice(0, i += 2); if (i >= text.length) { clearInterval(typeT); p.classList.add('done'); talking = false; } }, 22);
   speak(text);
 }
+/* ---------- skill advisor: which skills to use for a task, in order, and what is missing ---------- */
+const STAGE = ['', '조사·기획', '디자인', '개발·데이터', '점검', '자동화', '문서', '영업·홍보'];
+const SK = [ // [name, stage, keywords, what it does, how to ask]
+ ['deep-research',1,'조사|리서치|시장|경쟁|동향|비교|분석 보고','여러 출처를 찾아 읽고 조사 보고서로 정리','○○ 시장 동향 조사해줘'],
+ ['diagram-design',1,'흐름|구조|다이어그램|순서도|도식|설계|프로세스|조직도|간트|웹|앱|대시보드|시스템','업무 흐름과 시스템 구조를 그림으로 정리','주문부터 출고까지 흐름도 그려줘'],
+ ['account-research',1,'거래처|고객사|업체 조사|회사 조사','거래처 개요와 최근 소식을 한 장으로 조사','○○특장 조사해줘'],
+ ['frontend-design',2,'웹|앱|화면|페이지|대시보드|ui|디자인|사이트|홈페이지|사내','주제에 맞는 색·글꼴·레이아웃 방향을 잡고 화면 제작','첫 화면 디자인 방향부터 잡아줘'],
+ ['ui-ux-pro-max',2,'웹|앱|화면|대시보드|ui|ux|디자인|사용성|모바일|반응형|색|글꼴|사내','스타일·색 조합·UX 규칙을 검색해 근거 있는 디자인 기준 적용','이 화면 사용성 점검해줘'],
+ ['design-taste-frontend',2,'랜딩|홈페이지|소개 페이지|회사 사이트|상품 페이지|크몽|쇼핑몰','회사·제품 소개 페이지를 전문 업체 수준으로 제작','서비스 소개 페이지 만들어줘'],
+ ['dataviz',2,'차트|그래프|통계|대시보드|현황|시각화|매출|판매','숫자를 읽기 쉬운 차트로 그리는 규칙','월별 출고량 차트로 보여줘'],
+ ['supabase',3,'웹|앱|데이터|저장|로그인|회원|db|데이터베이스|사내|대시보드|출하|재고|주문|관리','웹앱의 데이터 저장소와 로그인·권한 구성','거래처 표 만들고 담당자만 수정하게 해줘'],
+ ['supabase-postgres-best-practices',3,'db|데이터베이스|테이블|표 구조|쿼리|느림|권한|재고|주문|데이터','표 구조·권한·속도를 올바르게 잡는 규칙','이 표 구조 점검해줘'],
+ ['xlsx',3,'엑셀|단가|성적서|전표|재고|판매현황|csv|표 정리|수식','엑셀 파일 읽기·만들기·수식과 서식 정리','출고전표 합쳐서 월별 합계 표 만들어줘'],
+ ['claude-api',3,'ai|챗봇|자비스|요약|자동 답변|claude|인공지능','내 프로그램에서 Claude를 불러 쓰는 방법','이 화면에 AI 답변 기능 붙여줘'],
+ ['computer-use',3,'pc|컴퓨터|프로그램|한글|반복 작업|화면 조작','PC 화면을 보고 마우스·키보드를 대신 조작','내 컴퓨터에서 이 파일 열어서 확인해줘'],
+ ['chrome-browser',3,'크롬|로그인|사이트 조작|사내 웹|관리자 페이지|사내망','로그인된 내 크롬에서 직접 클릭·입력','크롬에서 관리자 페이지 열어 확인해줘'],
+ ['google-workspace',3,'구글 시트|구글 문서|드라이브|스프레드시트','구글 문서·시트·슬라이드 파일 만들고 고치기','구글 시트에 이 표 만들어줘'],
+ ['agent-browser',4,'테스트|점검|동작 확인|qa|웹|앱|대시보드|사내','브라우저를 자동 조작해 웹앱이 실제로 되는지 확인','만든 화면 직접 눌러보며 테스트해줘'],
+ ['code-review',4,'코드|오류|버그|점검|배포|웹|앱|대시보드|사내','바꾼 코드에서 오류 찾기','/code-review'],
+ ['security-review',4,'보안|로그인|권한|사내|배포|개인정보|웹|앱','바꾼 코드의 보안 허점 찾기','보안 점검해줘'],
+ ['simplify',4,'정리|리팩터|복잡|중복','복잡하거나 중복된 코드 정리','/simplify'],
+ ['loop',5,'반복|주기|매일|매시간|모니터|감시','같은 작업을 일정 간격으로 반복','/loop 30m 배포 상태 확인'],
+ ['morning',5,'아침|브리핑|하루 시작','아침 브리핑 화면을 만들거나 평일 반복으로 설정','/morning'],
+ ['skill-creator',5,'스킬 만들|반복 작업|자동화|매번|양식 채우','자주 하는 작업을 나만의 스킬로 제작','성적서 양식 채우는 스킬 만들어줘'],
+ ['docs',6,'보고서|문서|매뉴얼|안내서|제안서|기획서|설명서','같이 보고 댓글 다는 공유 문서 작성','사용 안내서 문서로 만들어줘'],
+ ['docx',6,'워드|공문|계약서|견적서|docx','워드 문서 작성·수정','견적서 워드 파일로 만들어줘'],
+ ['pptx',6,'발표|ppt|슬라이드|피피티','발표자료 만들기와 수정','제안 발표자료 만들어줘'],
+ ['pdf',6,'pdf|스캔|양식 채우','PDF 읽기·합치기·나누기·양식 채우기','스캔한 성적서에서 표 뽑아줘'],
+ ['copywriting',7,'문구|카피|소개|랜딩|상품 페이지|크몽|홍보','소개 페이지의 제목과 문구 작성','서비스 소개 문구 써줘'],
+ ['offers',7,'가격|제안|상품 구성|패키지|크몽|견적|판매','상품 구성·가격·보증 조건 설계','크몽 상품 구성 다시 짜줘'],
+ ['cold-email',7,'메일|영업 메일|첫 연락|제안 메일|홍보','처음 연락하는 영업 메일과 후속 메일','특장 업체에 보낼 소개 메일 써줘'],
+ ['sales-enablement',7,'영업 자료|소개서|제안서|브로셔|홍보','소개서·제안서·반론 대응 자료 제작','웹앱 소개서 한 장 만들어줘'],
+];
+const SK_MISS = [ // candidates the user does not have; names to verify with find-skills before installing
+ ['webapp-testing','anthropics/skills','테스트|점검|qa|웹|앱|대시보드|사내','웹앱 자동 테스트 작성과 실행'],
+ ['mcp-builder','anthropics/skills','연동|mcp|커넥터|사내 시스템|api 연결|사내망','사내 시스템을 Claude에 연결하는 커넥터 제작'],
+ ['react-best-practices','vercel-labs/agent-skills','react|리액트|next|성능|웹|앱','React·Next.js 성능과 구조 규칙'],
+ ['web-design-guidelines','vercel-labs/agent-skills','접근성|웹 표준|ui 점검|디자인 점검|웹|화면','웹 화면 품질·접근성 점검 규칙'],
+ ['internal-comms','anthropics/skills','공지|사내 공지|주간 보고|사내 안내','사내 공지·보고 글 형식'],
+ ['canvas-design','anthropics/skills','포스터|배너|썸네일|이미지|로고','포스터·배너 같은 이미지 디자인'],
+];
+const SK_GAP = [[/영상|숏츠|쇼츠|릴스|편집/, '영상 편집', 'video editing'], [/인스타|유튜브|sns|마케팅/i, 'SNS·마케팅', 'social media marketing'], [/seo|검색 노출|블로그/i, '검색 노출·블로그', 'seo'],
+ [/회계|세금|부가세|정산/, '회계·정산', 'accounting'], [/번역|영문|영어로/, '번역', 'translation'], [/배포|netlify|vercel|도메인/i, '배포', 'deploy'], [/안드로이드|아이폰|모바일 앱|플레이스토어/, '모바일 앱', 'react native'], [/크롤|수집|스크랩/, '웹 자료 수집', 'web scraping']];
+let advPrompt = '';
+function advise(q) {
+  const task = q.replace(/(어떤|무슨|뭐|뭘|어느)?\s*스킬.*$/, '').replace(/(을|를)?\s*(작업)?\s*(하려는데|할려는데|할려하는데|하려고 하는데|하려고|하려면|할 건데|할건데|할 때|하는데|만들려는데|만들건데)\s*$/, '').trim(), low = q.toLowerCase().replace(/스킬/g, '');
+  if (task.length < 2) { say('어떤 작업인지 같이 적어 주세요. 예: “사내 재고 웹 만들려는데 어떤 스킬?”'); return; }
+  const score = kw => kw.split('|').filter(k => low.includes(k)).length;
+  const own = SK.map(r => ({ r, s: score(r[2]) })).filter(x => x.s).sort((a, b) => b.s - a.s).slice(0, 7).sort((a, b) => a.r[1] - b.r[1] || b.s - a.s);
+  const miss = SK_MISS.map(r => ({ r, s: score(r[2]) })).filter(x => x.s).sort((a, b) => b.s - a.s).slice(0, 3), gaps = SK_GAP.filter(g => g[0].test(q));
+  let html = '';
+  if (own.length) html += '<div class="skh">가진 스킬 · 이 순서로</div>' + own.map((x, i) => `<div class="sk"><b>${i + 1}. ${STAGE[x.r[1]]} · <em>${x.r[0]}</em></b><small>${esc(x.r[3])}<br>이렇게 말하기: “${esc(x.r[4])}”</small></div>`).join('');
+  if (miss.length || gaps.length) html += '<div class="skh">없는 스킬 · 찾아볼 것</div>' + miss.map(x => `<div class="sk"><b><em>${x.r[0]}</em> <small>(${x.r[1]})</small></b><small>${esc(x.r[3])}. 설치 전에 find-skills로 확인이 필요한 후보입니다.</small></div>`).join('')
+    + gaps.map(g => `<div class="sk"><b>${g[1]}</b><small>이 부분은 가진 스킬이 없습니다. find-skills 검색어: <em>${g[2]}</em></small></div>`).join('');
+  advPrompt = `[작업] ${task}\n\n` + (own.length ? '아래 스킬을 이 순서로 사용해서 진행해줘.\n' + own.map((x, i) => `${i + 1}. ${x.r[0]} (${STAGE[x.r[1]]}: ${x.r[3]})`).join('\n') + '\n\n' : '')
+    + '시작하기 전에 find-skills로 이 작업에 도움이 될 스킬을 더 찾아줘. 설치 수가 많고 출처가 믿을 만한 것만 추천하고, 설치는 내가 고른 뒤에 해줘.'
+    + (miss.length ? '\n확인할 후보: ' + miss.map(x => `${x.r[0]} (${x.r[1]})`).join(', ') : '') + (gaps.length ? '\n검색어: ' + gaps.map(g => g[2]).join(', ') : '');
+  html += '<div class="jrow"><button class="jact" data-copy="1">Claude에 붙여넣을 요청문 복사</button></div>';
+  say(own.length ? `「${task}」에는 가진 스킬 ${own.length}개를 이 순서로 쓰면 좋습니다.${miss.length || gaps.length ? ' 없는 스킬도 아래에 적었습니다.' : ''}` : `「${task}」에 딱 맞는 스킬이 목록에 없습니다. 요청문을 복사해 Claude에서 find-skills로 찾아보세요.`, html);
+  const names = own.map(x => x.r[0]), ids = new Set(db.notes.filter(n => n.tags.includes('스킬') && !isLocked(n) && names.some(nm => n.body.includes(nm))).map(n => n.id)); setFocus(ids.size ? ids : null);
+}
+function copyPrompt() { const done = () => toast('복사했습니다. Claude 입력창에 붙여넣으세요.'), fall = () => { if (!$('#jres textarea')) { const ta = document.createElement('textarea'); ta.value = advPrompt; ta.readOnly = true; $('#jres').append(ta); } const ta = $('#jres textarea'); ta.focus(); ta.select(); toast('아래 글을 길게 눌러 복사해 주세요.'); };
+  try { navigator.clipboard.writeText(advPrompt).then(done, fall); } catch (e) { fall(); } }
 function pick(id) { const n = byId(id); if (!n || !nodeById.get(id)) return; if (isLocked(n)) return guard(n, () => pick(id)); show('graph');
   const d = new Date(n.updated), body = n.body.replace(/\[\[|\]\]/g, '');
   say(`「${n.title || '제목 없음'}」을 확대했습니다.`, `<div class="jcard"><div class="jmeta"><i style="background:${FOLD[n.folder].color}"></i>${FOLD[n.folder].name} · ${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}${n.tags.length ? ' · ' + esc(n.tags.map(t => '#' + t).join(' ')) : ''}</div><p>${esc(body.slice(0, 900))}${body.length > 900 ? '…' : ''}</p><div class="jrow"><button class="jact" data-id="${n.id}">열어서 편집</button>${lastQ ? '<button class="jact ghost" data-back="1">결과 목록으로</button>' : ''}</div></div>`);
@@ -706,6 +775,7 @@ function ask(raw) {
     if (!hit) { say(`“${m[1]}”와 맞는 노트를 찾지 못했습니다.`); return; }
     const mark = () => { hit.n.locked = true; save(); refresh(); say(`「${hit.n.title}」을 중요 노트로 잠갔습니다. 열 때 비밀번호를 묻습니다.`); setFocus(new Set([hit.n.id])); };
     if (!db.pw) lockDialog('set', mark); else mark(); return; }
+  if (/스킬/.test(q) && /(추천|어떤|뭐|무슨|쓰면|써야|사용하|사용해|배열|골라|필요)/.test(q)) { advise(q); return; }
   if (/^(전체|리셋|초기화|전체 ?보기|처음으로)/.test(q)) { setFocus(null); $('#jout').hidden = true; fit(); say('전체 그래프로 돌아왔습니다. 노트 ' + db.notes.length + '개가 연결되어 있습니다.'); return; }
   if ((m = q.match(/^(?:새 ?노트|메모|기록)\s*[:：]?\s+(.+)/)) || (m = q.match(/^(.+?)\s*(?:라고|이라고)?\s*(?:메모해 ?줘|기록해 ?줘|적어 ?줘|저장해 ?줘|메모)$/))) {
     const text = m[1].trim(), n = newNote(text.length > 28 ? text.slice(0, 28) + '…' : text, text, 'idea');
