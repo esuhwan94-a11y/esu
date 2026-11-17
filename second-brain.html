@@ -56,7 +56,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 
 .main{position:relative;min-width:0;min-height:0;overflow:hidden}
 .view{position:absolute;inset:0}
-#cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab;background:radial-gradient(ellipse at 50% 55%,#3a1c05 0%,#1d0f06 42%,var(--bg) 78%)}
+#cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab;background:radial-gradient(ellipse at 50% 55%,#2e1604 0%,#170c05 45%,var(--bg) 80%)}
 .ghead{position:absolute;inset:0 0 auto 0;padding:12px var(--gr) 26px var(--gl);background:linear-gradient(var(--bg) 35%,transparent);pointer-events:none;display:grid;gap:6px}
 .crumb{color:var(--muted);font-size:12.5px}.crumb b{color:var(--fg);font-weight:600}
 .ghead h1{margin:0;font-size:21px;font-weight:700;display:flex;align-items:center;gap:12px}
@@ -73,7 +73,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 
 /* Jarvis console */
 .jarvis{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(52px + env(safe-area-inset-bottom, 0px));width:min(600px,calc(100% - var(--gl) - var(--gr)));display:flex;flex-direction:column;gap:8px}
-.jout{background:rgba(16,12,9,.88);backdrop-filter:blur(10px);border:1px solid rgba(255,138,31,.35);border-radius:14px;padding:12px 14px;max-height:min(44vh,330px);overflow-y:auto;box-shadow:0 0 40px rgba(255,138,31,.12)}
+.jout{background:rgba(16,12,9,.88);backdrop-filter:blur(10px);border:1px solid rgba(255,138,31,.35);border-radius:14px;padding:12px 14px;max-height:min(36vh,330px);overflow-y:auto;box-shadow:0 0 40px rgba(255,138,31,.12)}
 .jhead{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;color:var(--accent)}
 .jhead button{margin-left:auto;color:var(--muted);font-family:var(--sans);letter-spacing:0;font-size:12px;padding:2px 6px}
 .jsay{margin:8px 0 2px;line-height:1.55;font-size:14.5px;min-height:1.5em}
@@ -323,7 +323,7 @@ function build() {
   const old = nodeById; nodeById = new Map(); nodes = []; links = []; adj = new Map();
   const add = n => { const o = old.get(n.id); const a = Math.random() * 6.28, d = n.kind === 'core' ? 0 : 60 + Math.random() * 220;
     Object.assign(n, o ? { x:o.x, y:o.y, vx:0, vy:0 } : { x:Math.cos(a)*d, y:Math.sin(a)*d, vx:0, vy:0 }); nodes.push(n); nodeById.set(n.id, n); adj.set(n.id, new Set()); return n; };
-  const link = (a, b, len, w) => { if (a === b || adj.get(a).has(b)) return; links.push({ a:nodeById.get(a), b:nodeById.get(b), len, w }); adj.get(a).add(b); adj.get(b).add(a); };
+  const link = (a, b, len, w) => { if (a === b || adj.get(a).has(b)) return; links.push({ a:nodeById.get(a), b:nodeById.get(b), len, w, ph:Math.random() }); adj.get(a).add(b); adj.get(b).add(a); };
   add({ id:'core', kind:'core', label:'내 볼트', color:ACC, r:13 });
   const tagCount = {};
   db.notes.forEach(n => n.tags.forEach(t => tagCount[t] = (tagCount[t] || 0) + 1));
@@ -341,7 +341,7 @@ function build() {
 
 /* ---------- canvas ---------- */
 const cv = $('#cv'), ctx = cv.getContext('2d');
-let W = 0, H = 0, dpr = 1, alpha = 1, t0 = 0;
+let W = 0, H = 0, dpr = 1, alpha = 1;
 const cam = { x:0, y:0, k:1 }; let camTo = null;
 let focus = null, hover = null;
 const stars = Array.from({ length:170 }, () => ({ x:(Math.random()-.5)*2600, y:(Math.random()-.5)*2000, s:Math.random()*1.3+.3, p:Math.random()*6.28 }));
@@ -361,47 +361,95 @@ function step() {
   for (const a of nodes) { if (a.kind === 'core') { a.x = a.y = 0; continue; } if (a === drag.node) continue; a.vx *= .82; a.vy *= .82; a.x += a.vx; a.y += a.vy; }
   alpha *= .994;
 }
+const MONO = css('--mono'), SANS = css('--sans');
+let bootT = null, pingT = -1e9, frame = 0, hudTop = 150;
+const arc = (x, y, r, a0, a1) => { ctx.beginPath(); ctx.arc(x, y, Math.max(0, r), a0, a1); ctx.stroke(); };
+const hex = (x, y, r, rot) => { ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = rot + i * 1.0472; ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } ctx.closePath(); ctx.stroke(); };
+const RINGS = [[30,3,1.1,[[0,1.6],[2.1,1.6],[4.2,1.6]],.9],[44,1,-.7,[[0,5.2]],.5],[62,5,.45,[[0,.9],[1.3,.25],[3.1,1.4],[4.9,.25]],.55],[84,1,-.3,[[0,2.4],[3.14,2.4]],.5],[108,2,.2,[[.4,1.1],[2.5,.5],[4,1.7]],.4],[150,1,-.12,[[0,.7],[1.57,.7],[3.14,.7],[4.71,.7]],.45]];
 function draw(ts) {
   requestAnimationFrame(draw);
   if ($('#v-graph').hidden || !W) return;
-  const t = reduce ? 0 : ts / 1000; t0 = t;
+  if (bootT === null) bootT = ts;
+  if (frame++ % 30 === 0) hudTop = $('.ghead').offsetHeight - 16;
+  const t = reduce ? 0 : ts / 1000, boot = reduce ? 1 : Math.min(1, (ts - bootT) / 1800), ez = 1 - Math.pow(1 - boot, 3);
   step();
   if (camTo) { cam.x += (camTo.x-cam.x)*.09; cam.y += (camTo.y-cam.y)*.09; cam.k += (camTo.k-cam.k)*.09; if (Math.abs(camTo.k-cam.k) < .002 && Math.abs(camTo.x-cam.x) < .5) camTo = null; }
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-  for (const s of stars) { const x = (s.x - cam.x*.35) * (.6 + cam.k*.4) + W/2, y = (s.y - cam.y*.35) * (.6 + cam.k*.4) + H/2; if (x < 0 || x > W || y < 0 || y > H) continue;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H); ctx.setLineDash([]);
+  const k = cam.k, cx = sx(0), cy = sy(0), dim = focus ? .45 : 1;
+  for (const s of stars) { const x = (s.x - cam.x*.35) * (.6 + k*.4) + W/2, y = (s.y - cam.y*.35) * (.6 + k*.4) + H/2; if (x < 0 || x > W || y < 0 || y > H) continue;
     ctx.globalAlpha = .18 + .22 * Math.sin(t*1.3 + s.p) ** 2; ctx.fillStyle = '#ffd9b0'; ctx.fillRect(x, y, s.s, s.s); }
-  // HUD rings around the core
-  const cx = sx(0), cy = sy(0); ctx.lineWidth = 1;
-  [[46, 1, [3,9]], [78, -.6, [40,14]], [118, .35, [2,16]]].forEach(([r, sp, dash], i) => {
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * sp * .5); ctx.setLineDash(dash); ctx.globalAlpha = focus ? .12 : .28 - i*.06; ctx.strokeStyle = ACC;
-    ctx.beginPath(); ctx.arc(0, 0, r * cam.k, 0, 6.283); ctx.stroke(); ctx.restore(); });
-  const lit = n => !focus || focus.ids.has(n.id), near = n => focus && focus.near.has(n.id);
+  // polar grid
+  ctx.strokeStyle = ACC; ctx.lineWidth = 1;
+  for (let r = 100; r <= 700; r += 100) { ctx.globalAlpha = (r % 200 ? .05 : .09) * ez; arc(cx, cy, r*k*ez, 0, 6.283); }
+  ctx.globalAlpha = .05 * ez;
+  for (let i = 0; i < 12; i++) { const a = i * .5236; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a)*160*k, cy + Math.sin(a)*160*k); ctx.lineTo(cx + Math.cos(a)*700*k*ez, cy + Math.sin(a)*700*k*ez); ctx.stroke(); }
+  // radar sweep + search ping
+  if (!reduce) { const sw = t * .6; ctx.fillStyle = ACC;
+    for (let i = 0; i < 24; i++) { ctx.globalAlpha = (1 - i/24) * .075 * ez * dim; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, 520*k, sw - i*.035 - .036, sw - i*.035); ctx.closePath(); ctx.fill(); }
+    ctx.globalAlpha = .4 * ez * dim; ctx.strokeStyle = ACCHI; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(sw)*520*k, cy + Math.sin(sw)*520*k); ctx.stroke();
+    const pg = (ts - pingT) / 900; if (pg < 1) { ctx.globalAlpha = (1 - pg) * .8; ctx.lineWidth = 2; arc(cx, cy, pg*700*k, 0, 6.283); ctx.globalAlpha = (1 - pg) * .3; arc(cx, cy, pg*560*k, 0, 6.283); } }
+  // arc reactor
+  const rk = Math.max(k, .45) * ez; ctx.strokeStyle = ACC; ctx.lineWidth = 1;
+  for (let i = 0; i < 72; i++) { const a = i * .08727 + t * .05, r0 = 132*rk, r1 = (i % 6 ? 137 : 144) * rk; ctx.globalAlpha = (i % 6 ? .25 : .65) * dim; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a)*r0, cy + Math.sin(a)*r0); ctx.lineTo(cx + Math.cos(a)*r1, cy + Math.sin(a)*r1); ctx.stroke(); }
+  for (const [r, w, sp, segs, al] of RINGS) { ctx.lineWidth = w * Math.min(1.4, Math.max(.7, k)); ctx.globalAlpha = al * dim; for (const [s, l] of segs) arc(cx, cy, r*rk, s + t*sp, s + l + t*sp); }
+  const pr = 24 * rk * (1 + .06 * Math.sin(t * 2.4)), g = ctx.createRadialGradient(cx, cy, 0, cx, cy, pr * 2.2);
+  g.addColorStop(0, '#fff6e6'); g.addColorStop(.18, ACCHI); g.addColorStop(.42, ACC); g.addColorStop(1, 'rgba(255,138,31,0)');
+  ctx.globalAlpha = focus ? .5 : 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, pr * 2.2, 0, 6.283); ctx.fill();
+  // links with travelling pulses
   for (const l of links) { const on = focus && ((focus.ids.has(l.a.id) && (focus.ids.has(l.b.id) || focus.near.has(l.b.id))) || (focus.ids.has(l.b.id) && focus.near.has(l.a.id)));
-    ctx.globalAlpha = focus ? (on ? .8 : .05) : .16 + l.w*.14; ctx.strokeStyle = on ? ACCHI : '#c98b5a'; ctx.lineWidth = on ? 1.4 : .7;
-    ctx.beginPath(); ctx.moveTo(sx(l.a.x), sy(l.a.y)); ctx.lineTo(sx(l.b.x), sy(l.b.y)); ctx.stroke(); }
-  ctx.textAlign = 'center'; ctx.font = '500 11.5px ' + css('--sans');
-  for (const n of nodes) { const x = sx(n.x), y = sy(n.y); if (x < -60 || x > W+60 || y < -60 || y > H+60) continue;
-    const a = lit(n) ? 1 : near(n) ? .55 : .13, r = n.r * Math.max(.7, Math.min(cam.k, 1.6));
-    ctx.globalAlpha = a * .16; ctx.fillStyle = n.color; ctx.beginPath(); ctx.arc(x, y, r * 2.6, 0, 6.283); ctx.fill();
-    ctx.globalAlpha = a; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill();
-    if (focus && focus.ids.has(n.id) && n.kind !== 'core') { const p = reduce ? .5 : (t * .9 + n.x * .01) % 1; ctx.globalAlpha = 1 - p; ctx.strokeStyle = ACCHI; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(x, y, r + 4 + p * 16, 0, 6.283); ctx.stroke(); }
-    if (n === hover) { ctx.globalAlpha = 1; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, r + 3, 0, 6.283); ctx.stroke(); }
-    const show = n.kind !== 'note' ? cam.k > .55 : (focus ? focus.ids.has(n.id) : cam.k > 1.05) || n === hover;
-    if (show) { ctx.globalAlpha = a * (n.kind === 'note' ? .95 : .8); ctx.fillStyle = n.kind === 'note' ? '#f4ece3' : ACCHI; ctx.fillText(n.label.length > 16 ? n.label.slice(0, 15) + '…' : n.label, x, y + r + 14); }
+    const ax = sx(l.a.x), ay = sy(l.a.y), bx = sx(l.b.x), by = sy(l.b.y);
+    ctx.globalAlpha = (focus ? (on ? .85 : .05) : .2 + l.w*.14) * ez; ctx.strokeStyle = on ? ACCHI : '#c98b5a'; ctx.lineWidth = on ? 1.4 : .7;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    if (!reduce && (!focus || on)) { const p = (t * .3 + l.ph) % 1; ctx.globalAlpha = (on ? 1 : .7) * Math.sin(p * 3.1416); ctx.fillStyle = '#fff1dc'; ctx.fillRect(ax + (bx-ax)*p - 1.2, ay + (by-ay)*p - 1.2, 2.4, 2.4); } }
+  // nodes
+  const rank = focus ? new Map(focus.order.slice(0, 5).map((id, i) => [id, i])) : null;
+  for (const n of nodes) { if (n.kind === 'core') continue; const x = sx(n.x), y = sy(n.y); if (x < -80 || x > W+80 || y < -80 || y > H+80) continue;
+    const isF = focus && focus.ids.has(n.id), a = (!focus || isF ? 1 : focus.near.has(n.id) ? .55 : .13) * Math.max(0, Math.min(1, (ez * 800 - Math.hypot(n.x, n.y)) / 120 + (boot >= 1 ? 1 : 0)));
+    const r = n.r * Math.max(.7, Math.min(k, 1.6));
+    ctx.fillStyle = ctx.strokeStyle = n.color;
+    ctx.globalAlpha = a * .14; ctx.beginPath(); ctx.arc(x, y, r * 2.8, 0, 6.283); ctx.fill();
+    ctx.globalAlpha = a; ctx.beginPath(); ctx.arc(x, y, r * .72, 0, 6.283); ctx.fill();
+    ctx.lineWidth = 1; ctx.globalAlpha = a * .6;
+    if (n.kind === 'hub') { hex(x, y, r + 4.5, t * .25 + n.x * .01); } else arc(x, y, r + 2.5, 0, 6.283);
+    if (isF) { const rot = t * 1.2 + n.y * .01, R = r + 8; ctx.strokeStyle = ACCHI; ctx.lineWidth = 1.6; ctx.globalAlpha = 1;
+      for (let i = 0; i < 4; i++) arc(x, y, R, rot + i * 1.5708, rot + i * 1.5708 + .85);
+      const p = reduce ? .5 : (t * .8 + n.x * .01) % 1; ctx.globalAlpha = 1 - p; ctx.lineWidth = 1; arc(x, y, R + p * 18, 0, 6.283); }
+    if (n === hover) { ctx.globalAlpha = 1; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; arc(x, y, r + 4, 0, 6.283); }
+    const title = n.label.length > 16 ? n.label.slice(0, 15) + '…' : n.label;
+    if (rank && rank.has(n.id)) { // target callout
+      const dir = x > W * .62 ? -1 : 1, x1 = x + dir * 22, y1 = y - 22; ctx.font = '600 12px ' + SANS; const tw = Math.max(ctx.measureText(title).width, 64);
+      ctx.globalAlpha = .9; ctx.strokeStyle = ACCHI; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + dir * (r + 9) * .7, y - (r + 9) * .7); ctx.lineTo(x1, y1); ctx.lineTo(x1 + dir * (tw + 8), y1); ctx.stroke();
+      ctx.fillStyle = ACCHI; ctx.fillRect(x1 + dir * (tw + 8) - 1.5, y1 - 1.5, 3, 3);
+      ctx.textAlign = dir > 0 ? 'left' : 'right'; ctx.globalAlpha = 1; ctx.fillStyle = '#fff6ea'; ctx.fillText(title, x1 + dir * 4, y1 - 5);
+      ctx.font = '600 9px ' + MONO; ctx.fillStyle = ACC; ctx.fillText('T-0' + (rank.get(n.id) + 1) + ' · ' + (n.kind === 'hub' ? 'HUB' : FOLD[n.note.folder].name), x1 + dir * 4, y1 + 11);
+      continue; }
+    const show = n.kind !== 'note' ? k > .55 : (focus ? isF : k > 1.05) || n === hover;
+    if (show) { ctx.textAlign = 'center'; ctx.font = (n.kind === 'hub' ? '600 10.5px ' + MONO : '500 11.5px ' + SANS); ctx.globalAlpha = a * (n.kind === 'note' ? .95 : .85); ctx.fillStyle = n.kind === 'note' ? '#f4ece3' : ACCHI; ctx.fillText(title, x, y + r + 16); }
   }
-  ctx.globalAlpha = 1;
+  // HUD frame (screen space)
+  const top = hudTop, bot = H - 118, compact = W < 520; ctx.strokeStyle = ACC; ctx.fillStyle = ACC; ctx.lineWidth = 1.5; ctx.globalAlpha = .7 * ez;
+  for (const [x, d] of [[10, 1], [W - 10, -1]]) { ctx.beginPath(); ctx.moveTo(x + d * 22, top); ctx.lineTo(x, top); ctx.lineTo(x, top + 22); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, bot - 22); ctx.lineTo(x, bot); ctx.lineTo(x + d * 22, bot); ctx.stroke(); }
+  ctx.lineWidth = 1;
+  for (let y = top + 34, i = 0; y < bot - 30; y += 12, i++) { ctx.globalAlpha = (i % 5 ? .16 : .4) * ez; const w = i % 5 ? 4 : 9; ctx.fillRect(10, y, w, 1); ctx.fillRect(W - 10 - w, y, w, 1); }
+  const span = bot - top - 70, my = top + 34 + ((Math.log(k / .25) / Math.log(14)) * span); ctx.globalAlpha = .9 * ez; ctx.beginPath(); ctx.moveTo(22, my); ctx.lineTo(29, my - 4); ctx.lineTo(29, my + 4); ctx.closePath(); ctx.fill();
+  if (!reduce) { ctx.globalAlpha = .05; ctx.fillRect(0, top + (t * 46) % Math.max(1, bot - top), W, 1.5); }
+  ctx.font = '600 10px ' + MONO; ctx.textAlign = 'right'; const hd = String(Math.round(((t * .6) % 6.283) * 57.3)).padStart(3, '0');
+  const lines = ['SYS ONLINE', 'NODES ' + String(nodes.length).padStart(3, '0') + ' · LINKS ' + String(links.length).padStart(3, '0'), 'ZOOM ' + k.toFixed(2) + 'x · HDG ' + hd + '°', focus ? 'TARGET LOCK ' + String(focus.ids.size).padStart(2, '0') : 'SCANNING'];
+  lines.slice(0, compact ? 0 : 4).forEach((s, i) => { ctx.globalAlpha = (i === 3 ? .95 : .55) * ez; ctx.fillStyle = i === 3 && focus ? ACCHI : ACC; ctx.fillText(s, W - 26, top + 16 + i * 15); });
+  if (compact) { ctx.globalAlpha = .9 * ez; ctx.fillStyle = focus ? ACCHI : ACC; ctx.fillText(lines[3], W - 26, top + 14); }
+  ctx.textAlign = 'center'; ctx.globalAlpha = 1;
 }
 function fit(ids) {
   const list = ids ? nodes.filter(n => ids.has(n.id)) : nodes; if (!list.length) return;
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; list.forEach(n => { x0 = Math.min(x0, n.x); x1 = Math.max(x1, n.x); y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y); });
-  const padB = $('#jout').hidden ? 120 : Math.min(H * .5, 380), availH = Math.max(120, H - 110 - padB);
+  const padB = $('#jout').hidden ? 120 : Math.min(H * .42, 380) + 70, availH = Math.max(120, H - 110 - padB);
   const k = Math.max(.35, Math.min(2.2, Math.min((W - 80) / (x1 - x0 + 120), availH / (y1 - y0 + 120))));
   camTo = { k, x:(x0+x1)/2, y:(y0+y1)/2 + ((padB - 110) / 2) / k };
 }
 function setFocus(ids) {
   if (!ids || !ids.size) { focus = null; return; }
   const nearSet = new Set(); ids.forEach(id => (adj.get(id) || []).forEach(o => { if (!ids.has(o)) nearSet.add(o); }));
-  focus = { ids, near: nearSet }; fit(new Set([...ids]));
+  focus = { ids, near: nearSet, order: [...ids] }; pingT = performance.now(); fit(ids);
 }
 
 /* pointer: drag node, pan, pinch, tap */
