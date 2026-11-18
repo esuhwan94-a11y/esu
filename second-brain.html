@@ -269,7 +269,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
         <div class="sample" id="sample" hidden>지금 보이는 건 예시 노트예요<button id="clear-sample">비우고 시작</button></div>
       </div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r38<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r39<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -1012,7 +1012,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r38'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r39'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1183,15 +1183,17 @@ const SK = [ // [name, stage, keywords, what it does, how to ask]
  ['cold-email',7,'메일|영업 메일|첫 연락|제안 메일|홍보','처음 연락하는 영업 메일과 후속 메일','특장 업체에 보낼 소개 메일 써줘'],
  ['sales-enablement',7,'영업 자료|소개서|제안서|브로셔|홍보','소개서·제안서·반론 대응 자료 제작','웹앱 소개서 한 장 만들어줘'],
 ];
-const SK_MISS = [ // candidates the user does not have; names to verify with find-skills before installing
- ['mcp-builder','anthropics/skills','연동|mcp|커넥터|사내 시스템|api 연결|사내망','사내 시스템을 Claude에 연결하는 커넥터 제작'],
- ['react-best-practices','vercel-labs/agent-skills','react|리액트|next|성능|웹|앱','React·Next.js 성능과 구조 규칙'],
- ['pricing','제안받고 아직 미설치','가격|단가 정하|요금|크몽|상품 구성','가격 정하기'],
- ['prospecting','제안받고 아직 미설치','첫 손님|고객 찾|영업 대상|잠재 고객|크몽','첫 고객 찾기'],
- ['internal-comms','anthropics/skills','공지|사내 공지|주간 보고|사내 안내','사내 공지·보고 글 형식'],
- ['canvas-design','anthropics/skills','포스터|배너|썸네일|이미지|로고','포스터·배너 같은 이미지 디자인'],
+const SK_MISS = [ // skills the user does not have yet; names and install counts checked on skills.sh (2026-11-18)
+ ['vercel-react-best-practices','vercel-labs/agent-skills · 설치 90만','react|리액트|next|성능|웹|앱','React·Next.js 성능과 구조 규칙'],
+ ['mcp-builder','anthropics/skills · 설치 14만','연동|mcp|커넥터|사내 시스템|api 연결|사내망','사내 시스템을 Claude에 연결하는 커넥터 제작'],
+ ['canvas-design','anthropics/skills · 설치 13만','포스터|배너|썸네일|이미지|로고','포스터·배너 같은 이미지 디자인'],
+ ['internal-comms','anthropics/skills · 설치 8.8만','공지|사내 공지|주간 보고|사내 안내','사내 공지·보고 글 형식'],
+ ['pricing','coreyhaines31/marketingskills · 설치 9.3만','가격|단가 정하|요금|크몽|상품 구성','서비스 가격 정하기'],
+ ['prospecting','coreyhaines31/marketingskills · 설치 7.8만','첫 손님|고객 찾|영업 대상|잠재 고객|크몽','첫 고객 찾기'],
+ ['seo-audit','coreyhaines31/marketingskills · 설치 25만','seo|검색 노출|블로그|네이버|구글 노출','웹페이지 검색 노출 점검'],
+ ['video-editing','affaan-m/ecc · 설치 1.8만','영상 편집|컷 편집|편집해|자르기','영상 자르기와 편집 흐름'],
 ];
-const SK_GAP = [[/인스타|sns|페이스북|블로그 마케팅/i, 'SNS·마케팅', 'social media marketing'], [/seo|검색 노출|블로그/i, '검색 노출·블로그', 'seo'],
+const SK_GAP = [[/인스타|sns|페이스북|블로그 마케팅/i, 'SNS·마케팅', 'social media marketing'],
  [/회계|세금|부가세|정산/, '회계·정산', 'accounting'], [/번역|영문|영어로/, '번역', 'translation'], [/배포|netlify|vercel|도메인/i, '배포', 'deploy'], [/안드로이드|아이폰|모바일 앱|플레이스토어/, '모바일 앱', 'react native'], [/크롤|수집|스크랩/, '웹 자료 수집', 'web scraping']];
 let advPrompt = '';
 const allSkills = () => (window.VAULT_PACK && Array.isArray(window.VAULT_PACK.skills)) ? window.VAULT_PACK.skills : [];
@@ -1209,7 +1211,7 @@ function advise(q) {
   let html = '';
   if (own.length) html += '<div class="skh">가진 스킬 · 이 순서로</div>' + own.map((x, i) => `<div class="sk"><b>${i + 1}. ${STAGE[x.r[1]]} · <em>${x.r[0]}</em></b><small>${esc(x.r[3])}<br>이렇게 말하기: “${esc(x.r[4])}”</small></div>`).join('');
   if (more.length) html += `<div class="skh">가진 스킬 ${allSkills().length}개 중 더 맞는 것</div>` + more.map(k => `<div class="sk"><b><em>${esc(k.name)}</em> <small>${esc(k.group || '')}${k.plugin ? ' · ' + esc(k.plugin) : ''}</small></b><small>${esc(k.desc || '')}</small></div>`).join('');
-  if (miss.length || gaps.length) html += '<div class="skh">없는 스킬 · 찾아볼 것</div>' + miss.map(x => `<div class="sk"><b><em>${x.r[0]}</em> <small>(${x.r[1]})</small></b><small>${esc(x.r[3])}. 설치 전에 find-skills로 확인이 필요한 후보입니다.</small></div>`).join('')
+  if (miss.length || gaps.length) html += '<div class="skh">없는 스킬 · 찾아볼 것</div>' + miss.map(x => `<div class="sk"><b><em>${x.r[0]}</em> <small>(${x.r[1]})</small></b><small>${esc(x.r[3])}. skills.sh에서 확인한 후보입니다. 설치는 점검한 뒤에 합니다.</small></div>`).join('')
     + gaps.map(g => `<div class="sk"><b>${g[1]}</b><small>이 부분은 가진 스킬이 없습니다. find-skills 검색어: <em>${g[2]}</em></small></div>`).join('');
   advPrompt = `[작업] ${task}\n\n` + (own.length ? '아래 스킬을 이 순서로 사용해서 진행해줘.\n' + own.map((x, i) => `${i + 1}. ${x.r[0]} (${STAGE[x.r[1]]}: ${x.r[3]})`).join('\n') + '\n\n' : '')
     + (more.length ? '함께 쓸 만한 스킬: ' + more.map(k => k.name).join(', ') + '\n\n' : '')
