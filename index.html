@@ -1393,7 +1393,7 @@ function ask(raw) {
   if ((wx || /(뉴스|인터넷|(^|\s)웹에서|검색해서|환율|주가|시세)/.test(q)) && !/(메모해|노트|슬랙)/.test(q)) {
     const isW = wx, dn = isW ? byId('day-weather') : /뉴스/.test(q) ? byId('day-news') : null, fresh = dn && new Date(dn.updated).toDateString() === new Date().toDateString();
     let home = ''; try { home = localStorage.getItem('sb-region') || ''; } catch (e) {}
-    const place = isW ? tokens(q).filter(t => !/(오늘|내일|모레|이번|주말|날씨|기온|미세먼지|알려|보여|어때|어떄|브리핑|지금|실시간|검색|다시|최신|인터넷|현재|해줘|말해|우리|동네|여기|지역|좀|^뭐$)/.test(t)).join(' ') : '', region = isW ? (place || home) : '';
+    const place = isW ? tokens(q).filter(t => !/(오늘|내일|모레|이번|주말|날씨|기온|미세먼지|알려|보여|어때|어떄|브리핑|지금|실시간|검색|다시|최신|인터넷|현재|해줘|말해|우리|동네|여기|지역|좀|^뭐$|^비$|^눈$|^와$|^오$|^올$|온대|내려|우산|추워|더워|춥|덥|^많이$)/.test(t)).join(' ') : '', region = isW ? (place || home) : '';
     const covers = !region || (dn && region.split(' ').every(w => dn.body.includes(w)));
     if (fresh && covers && !/(지금|실시간|검색|다시|최신|인터넷)/.test(q)) { const parts = dn.body.split(/\n\n/), main = parts[0]; setFocus(new Set([dn.id])); say(main, `<div class="jcard"><p class="jmeta">${rich(parts.slice(1).join('\n\n'))}</p><div class="jrow"><button class="jact ghost" data-web="${esc(q)}">지금 다시 검색</button></div>${isW && !home ? '<p class="jmeta">내 지역 날씨로 받으려면 “내 지역은 군산”처럼 말해 주세요.</p>' : ''}</div>`); return; }
     webAsk(isW && region && !place ? `${region} ${q}` : q); return; }

@@ -20,10 +20,11 @@ const T2I = {}; try { const raw = fs.readFileSync(path.join(__dirname, '..', 'va
     const r = await p.evaluate(() => ({ t: window.__t, say: document.querySelector('#jout').hidden ? '' : document.querySelector('#jsay').textContent, res: document.querySelector('#jres').textContent.slice(0, 200), vault: !document.querySelector('#v-vault').hidden, modal: [...document.querySelectorAll('.modal')].some(m => !m.hidden), hasBtn: !!document.querySelector('#jres .jact, #jres textarea') }));
     const say = r.say, m = say.match(/^「(.+?)」[을를]? ?확대했습니다/); let got;
     if (r.t.sent.length) got = 'relay'; else if (r.modal) got = 'modal'; else if (r.vault) got = 'vault';
+    else if (/관련 기록 \d+건/.test(say)) got = 'search';
     else if (r.t.sql.length) got = 'db:' + ((r.t.sql.join(' ').match(/job_events|kab_job_packing|kab_slip_queue|kab_oem_state|dealers|jobs/) || ['?'])[0]);
     else if (r.t.mcp.length) got = 'mcp:' + r.t.mcp[0]; else if (r.t.ai) got = 'ai';
     else if (m) got = 'note:' + (T2I[m[1].trim()] || m[1]);
-    else if (/관련 기록 \d+건/.test(say)) got = 'search'; else if (/찾지 못했습니다/.test(say)) got = 'miss'; else if (/가진 스킬|스킬/.test(r.res) && /skh|순서/.test(await p.innerHTML('#jres'))) got = 'skill'; else got = say ? 'answer' : 'nothing';
+    else if (/관련 기록 \d+건/.test(say)) got = 'search'; else if (/찾지 못했습니다/.test(say)) got = 'miss'; else if (/가진 스킬 · 이 순서로|가진 스킬 \d+개 중|없는 스킬 · 찾아볼 것|딱 맞는 스킬이/.test(r.res + say)) got = 'skill'; else got = say ? 'answer' : 'nothing';
     if (got !== 'note:' && got.startsWith('note:') === false && r.hasBtn && /넘|보낼|시킬|확인/.test(say + r.res) && !r.t.sent.length && !r.t.mcp.length) got = got === 'answer' ? 'confirm' : got;
     const w = item.want; let ok;
     if (w.startsWith('any:')) ok = w.slice(4).split(',').some(x => got.startsWith(x)); else if (w.startsWith('answer:')) ok = ['answer', 'confirm'].includes(got) && new RegExp(w.slice(7)).test(say + r.res);
