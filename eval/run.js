@@ -17,10 +17,10 @@ const T2I = {}; try { const raw = fs.readFileSync(path.join(__dirname, '..', 'va
       window.claude = { use: async n => n === 'mcp' ? mcp : n === 'sample' ? sampler : n === 'comments' ? cm : n === 'db' ? dbm : null }; });
     p.setDefaultTimeout(8000); await p.goto('file://' + path.join(__dirname, '..', 'index.html'), { waitUntil: 'domcontentloaded', timeout: 15000 }); await p.waitForTimeout(700);
     await p.fill('#jq', item.q); await p.press('#jq', 'Enter'); await p.waitForTimeout(1400);
-    const r = await p.evaluate(() => ({ t: window.__t, say: document.querySelector('#jout').hidden ? '' : document.querySelector('#jsay').textContent, res: document.querySelector('#jres').textContent.slice(0, 200), vault: !document.querySelector('#v-vault').hidden, modal: [...document.querySelectorAll('.modal')].some(m => !m.hidden), hasBtn: !!document.querySelector('#jres .jact, #jres textarea') }));
+    const r = await p.evaluate(() => ({ t: window.__t, say: document.querySelector('#jout').hidden ? '' : document.querySelector('#jsay').textContent, res: document.querySelector('#jres').textContent.slice(0, 200), vault: !document.querySelector('#v-vault').hidden, spread: !document.querySelector('#spread').hidden, modal: [...document.querySelectorAll('.modal')].some(m => !m.hidden), hasBtn: !!document.querySelector('#jres .jact, #jres textarea') }));
     const say = r.say, m = say.match(/^「(.+?)」[을를]? ?확대했습니다/); let got;
     if (r.t.sent.length) got = 'relay'; else if (r.modal) got = 'modal'; else if (r.vault) got = 'vault';
-    else if (/관련 기록 \d+건/.test(say)) got = 'search';
+    else if (r.spread || /관련 기록 \d+건/.test(say)) got = 'search';
     else if (r.t.sql.length) got = 'db:' + ((r.t.sql.join(' ').match(/job_events|kab_job_packing|kab_slip_queue|kab_oem_state|dealers|jobs/) || ['?'])[0]);
     else if (r.t.mcp.length) got = 'mcp:' + r.t.mcp[0]; else if (r.t.ai) got = 'ai';
     else if (m) got = 'note:' + (T2I[m[1].trim()] || m[1]);

@@ -255,6 +255,23 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .an{margin-top:10px;font-size:13px;line-height:1.55;color:var(--muted)}
 .an span{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em}
 .an ul{margin:4px 0 0;padding-left:18px}
+/* r52: search hits pop up around the sphere as numbered cards */
+.spread{position:absolute;inset:0;pointer-events:none;z-index:18}
+.spread[hidden]{display:none}
+.scap{position:absolute;left:50%;top:14px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:7px 8px 7px 14px;background:rgba(6,12,18,.88);border:1px solid var(--line);border-top:2px solid var(--res);border-radius:4px;font-size:13.5px;pointer-events:auto;max-width:calc(100% - 32px)}
+.scap span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.scap b{color:var(--res);font-weight:600}
+.scap button{padding:6px 10px;min-height:32px;border:1px solid var(--line);border-radius:4px;font-size:12.5px;white-space:nowrap}
+.scards{position:absolute;inset:0}
+.scard{position:absolute;width:256px;display:grid;grid-template-columns:auto 1fr;gap:3px 11px;align-items:start;text-align:left;padding:10px 12px;background:rgba(6,12,18,.9);border:1px solid rgba(255,180,84,.45);border-radius:4px;pointer-events:auto;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:spop .26s cubic-bezier(.2,.9,.3,1.2) both}
+.scard:hover{border-color:var(--res);background:rgba(22,17,8,.94)}
+.scard em{grid-row:1/3;font-style:normal;font-family:var(--mono);font-size:30px;line-height:1;color:var(--res);min-width:24px;text-align:center}
+.scard b{font-weight:600;font-size:13.5px;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.scard small{color:var(--muted);font-size:12px;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.scard mark{background:none;color:var(--accent-hi)}
+@keyframes spop{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+#v-graph.spreading .brief,#v-graph.spreading .tasks,#v-graph.spreading .ttoggle,#v-graph.spreading .clus,#v-graph.spreading .hello,#v-graph.spreading .legend{display:none}
+@media (max-width:760px){.scap{top:10px}.scap span{font-size:12.5px}.scards{inset:auto var(--gl) calc(108px + env(safe-area-inset-bottom, 0px)) var(--gr);display:grid;gap:5px}.scard{position:static;width:auto;padding:8px 10px;min-height:44px}.scard em{font-size:22px;grid-row:1}.scard b{-webkit-line-clamp:1;align-self:center}.scard small{display:none}}
+@media (prefers-reduced-motion:reduce){.scard{animation:none}}
 .jres .jbad,.jres .jbad:hover{display:inline-flex;justify-self:end;margin-top:10px;padding:6px 10px;min-height:32px;border:1px solid var(--line);border-radius:4px;background:none;color:var(--muted);font-size:12px}
 </style>
 
@@ -313,8 +330,9 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
         <button data-view="vault">쌓인 노트<b id="bn"></b></button>
       </div>
       <div class="clus" id="clus"></div>
+      <div class="spread" id="spread" hidden><div class="scap" id="scap"></div><div class="scards" id="scards"></div></div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r51<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r52<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -483,6 +501,7 @@ const cv = $('#cv'), ctx = cv.getContext('2d'), bloom = document.createElement('
 const MONO = css('--mono'), SANS = css('--sans'), F = 900;
 let W = 0, H = 0, dpr = 1, alpha = 1, bootT = null, pingT = -1e9, frame = 0, hudTop = 46, solo = 0, flashT = -1e9, micOn = false, ryTo = null, rxTo = .32;
 const cam = { k:1, ry:.6, rx:.32, tx:0, ty:0, tz:0, oy:0 }; let camTo = null, flat = false, cR = 1, sR = 0, cP = 1, sP = 0;
+let spreadHits = [], spreadEls = [], spreadBack = null;
 let soloShift = 0, focus = null, hover = null, talking = false, talk = 0, ticker = '', showNames = false; try { showNames = localStorage.getItem('sb-names') === '1'; } catch (e) {}
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 function resize() { const r = cv.getBoundingClientRect(); dpr = Math.min(devicePixelRatio || 1, 2); W = r.width; H = r.height; cv.width = W * dpr; cv.height = H * dpr; bloom.width = Math.max(2, cv.width >> 3); bloom.height = Math.max(2, cv.height >> 3); }
@@ -545,7 +564,7 @@ function draw(ts) {
     ctx.strokeStyle = on ? AMB : ACC; ctx.globalAlpha = (focus ? (on ? .75 * d + .1 : .05) : (.08 + .4 * d) * (l.w === 2 ? .18 : 1)) * ez * vis;
     ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
     if (!reduce && l.ph < .22 && (!focus || on)) { const u = (t * .5 + l.ph * 9) % 1; glow(AMB, a.sx + (b.sx - a.sx) * u, a.sy + (b.sy - a.sy) * u, 4, d * Math.sin(u * 3.1416) * vis * ez); } }
-  const topN = focus && !focus.cat ? new Map(focus.order.slice(0, W < 520 ? 3 : 5).map((id, i) => [id, i])) : null, callouts = [];
+  const topN = focus && !focus.cat && !spreadEls.length ? new Map(focus.order.slice(0, W < 520 ? 3 : 5).map((id, i) => [id, i])) : null, callouts = [];
   for (const n of nodes) { if (n.kind === 'core') continue; const x = n.sx, y = n.sy;
     if (n.kind === 'hub') { const on = focus && focus.cat === n.cat, hm = (!focus || on ? 1 : .2) * ez * vis; n.la = (flat ? 1 : (n.d - .3) * 1.6) * hm; if (hm < .03) continue; ctx.strokeStyle = on ? AMB : ACCHI; ctx.lineWidth = 1;
       if (!flat) { ctx.globalAlpha = (.1 + .4 * n.d) * hm; ctx.setLineDash([2, 5]); ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y); ctx.stroke(); ctx.setLineDash([]); }
@@ -579,6 +598,10 @@ function draw(ts) {
     ctx.globalAlpha = .9; ctx.strokeStyle = AMB; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + dir * (r + 9) * .7, y - (r + 9) * .7 * Math.sign(y - y1 || 1)); ctx.lineTo(x1, y1); ctx.lineTo(x1 + dir * (tw + 8) * lp, y1); ctx.stroke();
     ctx.textAlign = dir > 0 ? 'left' : 'right'; ctx.globalAlpha = lp * lp; ctx.fillStyle = '#eef6fa'; ctx.shadowColor = '#000'; ctx.shadowBlur = 6; ctx.fillText(title, x1 + dir * 4, y1 - 5);
     ctx.font = '600 9px ' + MONO; ctx.fillStyle = AMB; ctx.fillText('T-0' + (topN.get(n.id) + 1) + ' · ' + FOLD[n.note.folder].name, x1 + dir * 4, y1 + 11); ctx.shadowBlur = 0; }
+  if (spreadEls.length) { const cr = frame % 12 === 1 || !spreadEls[0].r ? cv.getBoundingClientRect() : null; ctx.font = '600 11px ' + MONO; ctx.textAlign = 'center';
+    spreadEls.forEach((e, i) => { if (cr) { const b = e.el.getBoundingClientRect(); e.r = { x: b.left - cr.left, y: b.top - cr.top, w: b.width, h: b.height }; } const n = e.n; if (!n || n.sx === undefined || !e.r) return; const a = (.25 + .75 * n.d) * ez;
+      if (W > 760) { const left = e.r.x + e.r.w / 2 < W / 2, ax = left ? e.r.x + e.r.w : e.r.x, ay = e.r.y + e.r.h / 2, mx = ax + (left ? 26 : -26); ctx.strokeStyle = AMB; ctx.lineWidth = 1; ctx.globalAlpha = .6 * a; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(mx, ay); ctx.lineTo(n.sx, n.sy); ctx.stroke(); }
+      ctx.globalAlpha = a; ctx.fillStyle = 'rgba(4,9,14,.9)'; ctx.beginPath(); ctx.arc(n.sx, n.sy - 13, 8, 0, 6.283); ctx.fill(); ctx.strokeStyle = AMB; ctx.lineWidth = 1; ctx.stroke(); ctx.fillStyle = AMB; ctx.fillText(String(i + 1), n.sx, n.sy - 9); }); }
   ctx.textAlign = 'center'; ctx.globalAlpha = 1;
 }
 function fit() {
@@ -690,6 +713,8 @@ document.addEventListener('click', e => {
   else if (b.dataset.task) { const t = tasks.find(x => x.id === b.dataset.task); if (t) { $('#tasks').classList.remove('open'); showTask(t); } }
   else if (b.dataset.web) { let hm = ''; try { hm = localStorage.getItem('sb-region') || ''; } catch (e) {} webAsk('지금 ' + (/(날씨|기온)/.test(b.dataset.web) && hm && !b.dataset.web.includes(hm) ? hm + ' ' : '') + b.dataset.web + ' 검색해서 알려줘'); }
   else if (b.dataset.diag) diagnose();
+  else if (b.dataset.spclose) { clearSpread(); setFocus(null); fit(); }
+  else if (b.dataset.spall) { const f = spreadBack; clearSpread(); if (f) f(); }
   else if (b.dataset.bad) { logMiss(b.dataset.bad, 'bad', $('#jsay').textContent); b.disabled = true; b.textContent = '기록했습니다'; toast('기록했습니다. “못 답한 질문 보여줘”로 모아 볼 수 있습니다.'); }
   else if (b.dataset.missclear) { misses = []; try { localStorage.removeItem('sb-miss'); } catch (e) {} say('목록을 비웠습니다.'); }
   else if (b.dataset.missend) { const list = misses.slice(0, 25).map((x, i) => `${i + 1}. ${x.q} (${MISSK[x.kind] || x.kind}${x.ans ? ', 답: ' + x.ans.slice(0, 40) : ''})`).join('\n'); if (relayReady()) relay('Claude 새 작업으로 시키기: 자비스가 제대로 답하지 못한 질문 목록이야. 저장소 esu의 eval/questions.json 기준 질문에 추가하고, 자비스가 이 질문들에 바로 답하도록 고친 뒤 node eval/run.js 로 점수를 다시 확인해줘.\n' + list); else say('지금은 Claude에게 넘길 수 없습니다. 목록을 길게 눌러 복사해 Claude 대화에 붙여 주세요.'); }
@@ -818,7 +843,7 @@ function speak(text) { if (!voiceOn) return; let vp = ''; try { vp = localStorag
   synth(text); }
 function synth(text) { if (!('speechSynthesis' in window)) return; try { const busyNow = speechSynthesis.speaking || speechSynthesis.pending; if (busyNow) speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/[「」“”#]/g, ' ')); u.lang = 'ko-KR'; u.rate = 1.02; u.pitch = 1.05; const vs = speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)); let pref = ''; try { pref = localStorage.getItem('sb-voice') || ''; } catch (x) {} const fv = vs.find(v => v.name === pref) || vs.find(v => /female|yuna|sora|heami|sun-?hi|seoyeon|여/i.test(v.name)) || vs[0]; if (fv) u.voice = fv; const go = () => { try { speechSynthesis.resume(); speechSynthesis.speak(u); } catch (e) {} }; busyNow ? setTimeout(go, 160) : go(); } catch (e) {} }
 function say(text, html, action, opt) {
-  const out = $('#jout'), p = $('#jsay'); const wasHidden = out.hidden; out.hidden = false; out.scrollTop = 0; if (wasHidden && !reduce) { out.classList.remove('pop'); void out.offsetWidth; out.classList.add('pop'); } if (!(opt && opt.quiet)) { flashT = performance.now(); blip(1700, 1700, .055, .05); setTimeout(() => blip(2300, 2300, .085, .05), 85); } $('#hints').hidden = true; $('#jres').innerHTML = html || '';
+  clearSpread(); const out = $('#jout'), p = $('#jsay'); const wasHidden = out.hidden; out.hidden = false; out.scrollTop = 0; if (wasHidden && !reduce) { out.classList.remove('pop'); void out.offsetWidth; out.classList.add('pop'); } if (!(opt && opt.quiet)) { flashT = performance.now(); blip(1700, 1700, .055, .05); setTimeout(() => blip(2300, 2300, .085, .05), 85); } $('#hints').hidden = true; $('#jres').innerHTML = html || '';
   if (action) { const b = document.createElement('button'); b.className = 'jact'; b.textContent = action.label; b.onclick = action.run; $('#jres').append(b); }
   if (curQ && !(opt && opt.quiet) && !/^(못 ?답한|틀린 ?답|점검 ?목록)/.test(curQ) && !/data-miss/.test(html || '')) { const w = document.createElement('button'); w.className = 'jbad'; w.dataset.bad = curQ; w.textContent = '이 답이 틀렸어요'; $('#jres').append(w); }
   clearInterval(typeT); p.classList.remove('done'); p.classList.toggle('big', !!(opt && opt.big)); p.textContent = ''; let i = 0; talking = !reduce;
@@ -1091,7 +1116,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r51'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r52'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1317,6 +1342,21 @@ function pick(id) { const n = byId(id); if (!n || !nodeById.get(id)) return; if 
   const d = new Date(n.updated);
   say(`「${n.title || '제목 없음'}」을 확대했습니다.`, `<div class="jcard"><div class="jmeta"><i style="background:${FOLD[n.folder].color}"></i>${FOLD[n.folder].name} · ${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}${n.tags.length ? ' · ' + esc(n.tags.map(t => '#' + t).join(' ')) : ''}</div><p>${rich(n.body.slice(0, 4200))}${n.body.length > 4200 ? '…' : ''}</p><div class="jrow"><button class="jact" data-id="${n.id}">열어서 편집</button>${lastQ ? '<button class="jact ghost" data-back="1">결과 목록으로</button>' : ''}</div></div>`);
   setFocus(new Set([id])); blip(900, 1500, .12, .04); }
+function clearSpread() { if ($('#spread').hidden) return; $('#spread').hidden = true; $('#scards').innerHTML = ''; spreadEls = []; $('#v-graph').classList.remove('spreading'); }
+function showSpread(label, hits, tk, back) { const max = W <= 760 ? 5 : 8, list = hits.slice(0, max), rows = Math.ceil(list.length / 2), stepY = clamp((H - 76 - 150) / rows, 84, 116); spreadBack = back;
+  $('#jout').hidden = true; talking = false; clearInterval(typeT); spreadHits = list.map(h => h.n.id);
+  $('#scap').innerHTML = `<span>“${esc(label)}” <b>${hits.length}건</b>${hits.length > list.length ? ' 중 ' + list.length + '건' : ''} · 번호를 말하거나 누르세요</span><button data-spall="1">목록</button><button data-spclose="1">닫기</button>`;
+  $('#scards').innerHTML = list.map((h, i) => { const left = i % 2 === 0; return `<button class="scard" data-pick="${h.n.id}" style="${left ? 'left' : 'right'}:calc(var(--${left ? 'gl' : 'gr'}) + 10px);top:${76 + (i >> 1) * stepY}px;animation-delay:${i * 90}ms"><em>${i + 1}</em><b>${h.n.locked ? LOCK : ''}${esc(h.n.title || '제목 없음')}</b><small>${isLocked(h.n) ? '잠긴 노트입니다.' : snippet(h.n, tk)}</small></button>`; }).join('');
+  $('#spread').hidden = false; $('#v-graph').classList.add('spreading'); spreadEls = [...$('#scards').children].map((el, i) => ({ el, n: nodeById.get(list[i].n.id), r: null }));
+  flashT = performance.now(); if (!reduce) list.forEach((_, i) => setTimeout(() => blip(1500 + i * 130, 1500 + i * 130, .05, .04), i * 90));
+  speak(`${label} 관련 ${hits.length}건입니다. ` + list.slice(0, 3).map((h, i) => `${i + 1}번, ${h.n.title}`).join('. ') + '. 번호를 말씀해 주세요.'); }
+const SPNUM = { 일: 1, 이: 2, 삼: 3, 사: 4, 오: 5, 육: 6, 칠: 7, 팔: 8, 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5, 여섯: 6, 일곱: 7, 여덟: 8, 첫: 1 };
+function spreadPick(m) { const i = (+m[1] || SPNUM[m[1]] || 0) - 1, n = byId(spreadHits[i]), rest = m[2] || '';
+  if (!n) { say(`${i + 1}번은 없습니다. 1번부터 ${spreadHits.length}번까지 있습니다.`); return; }
+  if (/(잠가|잠궈|잠금|잠그)/.test(rest) && !/(풀어|해제|없애)/.test(rest)) { if (n.locked) { say(`${i + 1}번 「${n.title}」은 이미 잠겨 있습니다.`); return; } const mark = () => { n.locked = true; save(); refresh(); say(`${i + 1}번 「${n.title}」을 잠갔습니다. 열 때 비밀번호를 묻습니다.`); }; if (!db.pw) lockDialog('set', mark); else mark(); return; }
+  if (/(풀어|해제|없애)/.test(rest)) { if (!n.locked) { say(`${i + 1}번 「${n.title}」은 잠겨 있지 않습니다.`); return; } const undo = () => { n.locked = false; save(); refresh(); say(`${i + 1}번 「${n.title}」의 잠금을 풀었습니다.`); }; if (!unlocked && db.pw) lockDialog('unlock', undo); else undo(); return; }
+  if (/(편집|수정|고쳐)/.test(rest)) { guard(n, () => openNote(n.id)); return; }
+  pick(n.id); }
 /* questions Jarvis could not answer well are kept on this device so they can be handed to Claude and added to the baseline set */
 let misses = [], curQ = ''; try { misses = JSON.parse(localStorage.getItem('sb-miss') || '[]').filter(x => x && x.q); } catch (e) {}
 function logMiss(q, kind, ans) { if (!q || /^(못 ?답한|틀린 ?답|점검 ?목록)/.test(q)) return; misses = misses.filter(x => x.q !== q); misses.unshift({ q: q.slice(0, 200), kind, ans: String(ans || '').slice(0, 120), at: Date.now() }); misses = misses.slice(0, 60); try { localStorage.setItem('sb-miss', JSON.stringify(misses)); } catch (e) {} }
@@ -1324,7 +1364,8 @@ const MISSK = { miss: '기록을 못 찾음', search: '질문인데 검색 결�
 function showMisses() { setFocus(null); if (!misses.length) { say('제대로 답하지 못한 질문 기록이 없습니다. 답이 이상하면 답변 아래의 “이 답이 틀렸어요”를 눌러 주세요.'); return; }
   say(`제대로 답하지 못한 질문이 ${misses.length}개 쌓여 있습니다. Claude에게 넘기면 기준 질문에 넣고 고칩니다.`, misses.map(x => `<div class="sk"><b>${esc(x.q)}</b><small>${MISSK[x.kind] || x.kind} · ${ago(x.at)}${x.ans ? ' · 답: ' + esc(x.ans) : ''}</small></div>`).join('') + '<div class="jrow"><button class="jact" data-missend="1">Claude에게 넘겨서 고치게 하기</button><button class="jact ghost" data-missclear="1">목록 비우기</button></div>', null, { speech: `제대로 답하지 못한 질문이 ${misses.length}개 있습니다.` }); }
 function ask(raw) {
-  const q = raw.trim(); if (!q) return; show('graph'); $('#jq').value = ''; curQ = q;
+  const q = raw.trim(); if (!q) return; show('graph'); $('#jq').value = ''; curQ = q; clearSpread();
+  { const sm = spreadHits.length && !/(메일|일정|전표)/.test(q) && (q.match(/^(?:(?:어|응|음|아|네)\s*)?(?:저거|그거|이거|거기)?\s*(\d{1,2}|일|이|삼|사|오|육|칠|팔|한|두|세|네|다섯|여섯|일곱|여덟|첫)\s*(?:번째|번)\s*(.*)$/) || q.match(/^(\d)()$/)); if (sm) { spreadPick(sm); return; } }
   if (/^(못 ?답한|틀린 ?답|이상한 ?답|점검 ?목록)|(못 ?답한|틀린|이상한) ?(질문|답).*(보여|알려|목록|뭐)/.test(q)) { showMisses(); return; }
   const bar = $('#jbar'); bar.classList.add('busy'); setTimeout(() => bar.classList.remove('busy'), 900); flashT = performance.now();
   let m;
@@ -1444,7 +1485,9 @@ function ask(raw) {
   const label = tk.map(t => t.replace('#', '')).join(' · ');
   if (looksLikeQuestion(q) && q[0] !== '#') logMiss(q, 'search', hits[0].n.title);
   const text = `“${label}” 관련 기록 ${hits.length}건을 찾았습니다. 가장 가까운 건 「${hits[0].n.title}」입니다.`;
-  say(text, hits.map(h => `<button data-pick="${h.n.id}"><i style="background:${FOLD[h.n.folder].color}"></i><b>${h.n.locked ? LOCK : ''}${esc(h.n.title || '제목 없음')}</b><small>${isLocked(h.n) ? '잠긴 노트입니다. 누르면 비밀번호를 묻습니다.' : snippet(h.n, tk)}</small></button>`).join('') + (q[0] === '#' ? '' : relayBtn(q)));
+  const html = hits.map((h, i) => `<button data-pick="${h.n.id}"><i style="background:${FOLD[h.n.folder].color}"></i><b>${i + 1}. ${h.n.locked ? LOCK : ''}${esc(h.n.title || '제목 없음')}</b><small>${isLocked(h.n) ? '잠긴 노트입니다. 누르면 비밀번호를 묻습니다.' : snippet(h.n, tk)}</small></button>`).join('') + (q[0] === '#' ? '' : relayBtn(q));
+  if (hits.length > 1) { setFocus(new Set(hits.slice(0, W <= 760 ? 5 : 8).map(h => h.n.id))); showSpread(label, hits, tk, () => { say(text, html, null, { quiet: true }); spreadHits = hits.map(h => h.n.id); setFocus(ids); }); return; }
+  spreadHits = hits.map(h => h.n.id); say(text, html);
   setFocus(ids);
 }
 $('#jbar').addEventListener('submit', e => { e.preventDefault(); ask($('#jq').value); });
