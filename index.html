@@ -322,7 +322,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       </div>
       <div class="clus" id="clus"></div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r50<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r51<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -1099,7 +1099,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r50'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r51'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1337,7 +1337,7 @@ function ask(raw) {
   const bar = $('#jbar'); bar.classList.add('busy'); setTimeout(() => bar.classList.remove('busy'), 900); flashT = performance.now();
   let m;
   if (/(잠겻|잠겼|잠겨|잠긴|잠궜|잠갔[나어니지]|잠금 ?(상태|됐|돼|되어|걸렸|걸려|여부)|잠그?[어아]? ?(졌|놨|뒀))/.test(q) && !/(잠가 ?줘|잠궈 ?줘|풀어 ?줘|해제해)/.test(q)) { // "is it locked?" and "what is locked?"
-    const rest = q.replace(/(잠겻|잠겼|잠겨|잠긴|잠궜|잠갔|잠금|잠그|상태|여부|됐|돼|되어|걸렸|걸려|있어|있나|있냐|있니|있는지|나구|나고|냐고|냐구|는지|확인|알려|보여|해줘|줘|노트|뭐|어떤|목록|리스트|몇 ?개|전부|\?)/g, ' ').replace(/\s+/g, ' ').trim(), locked = db.notes.filter(n => n.locked);
+    const rest = q.replace(/(잠겻|잠겼|잠겨|잠긴|잠궜|잠갔|잠금|잠그)[가-힣]*/g, ' ').replace(/(잠겻|잠겼|잠겨|잠긴|잠궜|잠갔|잠금|잠그|상태|여부|됐|돼|되어|걸렸|걸려|있어|있나|있냐|있니|있는지|나구|나고|냐고|냐구|는지|확인|알려|보여|해줘|줘|노트|뭐|어떤|목록|리스트|몇 ?개|전부|\?)/g, ' ').replace(/\s+/g, ' ').trim(), locked = db.notes.filter(n => n.locked);
     const btn = n => `<button data-pick="${n.id}"><i style="background:${FOLD[n.folder].color}"></i><b>${n.locked ? LOCK : ''}${esc(n.title || '제목 없음')}</b><small>${n.locked ? '잠겨 있음' : '잠겨 있지 않음'} · ${esc(catOf(n))}</small></button>`;
     const nrm = x => x.replace(/[\s·\d]/g, '').toLowerCase(), rc = nrm(rest.replace(/(묶음|그룹|분류|전체)/g, '')), gcat = rc && CATS.map(c => c[0]).find(c => nrm(c) === rc || c.split(' · ').some(w => nrm(w) === rc));
     if (gcat) { const g = db.notes.filter(n => catOf(n) === gcat), gl = g.filter(n => n.locked); say(`「${gcat}」 묶음 노트 ${g.length}개 중 잠긴 것은 ${gl.length}개입니다.${gl.length === g.length && g.length ? ' 전부 잠겨 있습니다.' : gl.length ? '' : ' 잠그려면 “' + gcat.split(' · ')[0] + ' 묶음 잠가줘”라고 하세요.'}`, (gl.length ? gl : g).slice(0, 30).map(btn).join('')); setFocus(new Set(g.map(n => n.id)), gcat); return; }
