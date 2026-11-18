@@ -248,7 +248,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
         <div class="sample" id="sample" hidden>지금 보이는 건 예시 노트예요<button id="clear-sample">비우고 시작</button></div>
       </div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r30<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r31<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -616,6 +616,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.tag) { show('graph'); ask('#' + b.dataset.tag); }
   else if (b.dataset.sel) { selSet.has(b.dataset.sel) ? selSet.delete(b.dataset.sel) : selSet.add(b.dataset.sel); renderVault(); }
   else if (b.dataset.dcopy) { try { navigator.clipboard.writeText(diagText).then(() => toast('복사했습니다.'), () => toast('복사하지 못했습니다. 화면을 캡처해 주세요.')); } catch (e) { toast('복사하지 못했습니다. 화면을 캡처해 주세요.'); } }
+  else if (b.dataset.relay) { if (relayLast) relay(relayLast); }
   else if (b.dataset.diag) diagnose();
   else if (b.dataset.perm) openPerms();
   else if (b.dataset.cgo) ccGo();
@@ -914,13 +915,15 @@ const deepFind = (v, test, depth) => { if (depth > 6 || v == null) return null; 
 async function ccFetch() { const p = await conn(CC, 'list_sessions', { limit: 20 }), arr = deepFind(p, v => Array.isArray(v) && v.length && v[0] && typeof v[0] === 'object' && 'id' in v[0] && ('title' in v[0] || 'session_status' in v[0])) || [];
   ccList = arr.map(x => ({ id: String(x.id), title: String(x.title || '(제목 없음)'), state: BUCKET[String(x.status_bucket || '').replace('SESSION_STATUS_BUCKET_', '')] || (/ARCHIVED/.test(x.session_status || '') ? '보관됨' : ''), when: mdate(x.updated_at), note: (x.post_turn_summary && (x.post_turn_summary.needs_action || x.post_turn_summary.recent_action)) || '', pc: x.environment_kind === 'bridge' })).filter(x => x.state !== '보관됨'); return ccList; }
 const ccHtml = () => ccList.filter(x => !/^자비스 웹 조사/.test(x.title)).map((x, i) => `<div class="sk"><b>${esc(x.title)} <small>${x.state}${x.pc ? ' · 내 PC' : ' · 클라우드'} · ${x.when}</small></b>${x.note ? `<small>${esc(String(x.note).slice(0, 160))}</small>` : ''}<div class="jrow"><button class="jact ghost" data-csend="${i}">지시 보내기</button><a href="https://claude.ai/code/${esc(x.id)}" target="_blank" rel="noopener">↗ 대화 열기</a></div></div>`).join('');
-async function claudeList() { setFocus(null); setBusy(true); say('Claude 작업을 확인하고 있습니다.', '', null, { quiet: true });
+async function claudeList() { if (relay('지금 내 Claude 작업(세션) 목록과 상태를 알려줘. 내 답을 기다리는 것이 있으면 먼저 말해줘.')) return; setFocus(null); setBusy(true); say('Claude 작업을 확인하고 있습니다.', '', null, { quiet: true });
   try { await ccFetch(); setBusy(false); const n = ccList.filter(x => x.state === '작업 중').length, w = ccList.filter(x => x.state === '내 답을 기다림');
     say(ccList.length ? `Claude 작업은 ${ccList.length}개입니다. 지금 돌아가는 건 ${n}개${w.length ? `, 내 답을 기다리는 건 ${w.map(x => x.title).join(', ')}` : ''}입니다.` : '진행 중인 Claude 작업이 없습니다.', ccHtml() + '<div class="jrow"><button class="jact" data-cnew="1">새 작업 시키기</button></div>');
   } catch (e) { connErr(e, 'Claude 작업'); } }
 function ccConfirm(target, text) { ccPending = { target }; ccTarget = null; $('#jq').placeholder = '자비스에게 물어보세요 · 검색, 메모, 열기';
   say(target ? `「${target.title}」 대화에 이 지시를 보낼까요?` : '새 Claude 작업을 열고 이 지시를 보낼까요?', `<div class="jcard"><textarea id="cmsg" aria-label="보낼 지시">${esc(text)}</textarea><p class="jmeta">${target ? (target.pc ? '내 PC에서 돌던 대화라 PC와 Claude 앱이 켜져 있어야 실행됩니다.' : '클라우드에서 이어서 실행됩니다.') : '새 작업은 클라우드에서 시작되고 사용량이 듭니다.'} 내용은 위에서 고칠 수 있습니다.</p><div class="jrow"><button class="jact" data-cgo="1">보내기</button><button class="jact ghost" data-ccancel="1">취소</button></div></div>`, null, { speech: target ? `${target.title} 대화에 보낼까요?` : '새 클로드 작업으로 보낼까요?' }); }
-async function ccGo() { const pnd = ccPending, text = ($('#cmsg') ? $('#cmsg').value : '').trim(); if (!pnd || !text) return; ccPending = null; setBusy(true);
+async function ccGo() { const pnd = ccPending, text = ($('#cmsg') ? $('#cmsg').value : '').trim(); if (!pnd || !text) return; ccPending = null;
+  if (relayReady() && (!pnd.target || pnd.target.relay)) { relay(pnd.target ? 'PC에 시키기: ' + text : 'Claude 새 작업으로 시키기: ' + text); return; }
+  setBusy(true);
   try { if (pnd.target) { await conn(CC, 'send_message', { session_id: pnd.target.id, message: text }); setBusy(false);
       say(`「${pnd.target.title}」 대화에 지시를 보냈습니다. 결과는 그 대화에서 확인할 수 있습니다.`, `<div class="jrow"><a class="lk2" href="https://claude.ai/code/${esc(pnd.target.id)}" target="_blank" rel="noopener">↗ 대화 열기</a></div>`); }
     else { const p = await conn(CC, 'create_session', { prompt: text, title: text.replace(/\s+/g, ' ').slice(0, 40) }), id = (JSON.stringify(p).match(/session_[A-Za-z0-9]+/) || [])[0]; setBusy(false);
@@ -931,9 +934,24 @@ async function claudeSendTo(name, text) { setBusy(true); try { if (!ccList.lengt
     if (!hit) { say(`“${name}”에 해당하는 Claude 대화를 찾지 못했습니다. 아래에서 고르거나 새 작업으로 보낼 수 있습니다.`, ccHtml() + '<div class="jrow"><button class="jact" data-cnew="1">새 작업 시키기</button></div>'); ccTarget = { text }; return; }
     ccConfirm(hit, text); } catch (e) { connErr(e, 'Claude 작업'); } }
 
+/* ---------- relay: hand a request to the Claude session that watches this page, and show the answer it writes back ---------- */
+let cmt = null, dbx = null, relayAnchor = null, relayCan = '', relayLast = '';
+const relayReady = () => !!(cmt && dbx && relayAnchor);
+function relay(q) { // call straight from the viewer's tap or Enter: sending to Claude needs a fresh gesture
+  if (!relayReady()) return false; relayLast = q; setFocus(null);
+  const id = 'r' + Date.now().toString(36) + uid().slice(0, 4); let done = false, unsub = null, pr;
+  try { pr = cmt.sendToClaude({ anchor: relayAnchor, text: `[자비스 요청 ${id}] ${q}`.slice(0, 1800) }); } catch (e) { pr = Promise.reject(e); }
+  setBusy(true); talking = true; say('Claude에게 넘겼습니다. 답이 오는 데 1분쯤 걸립니다.', '', null, { quiet: true }); talking = true;
+  const finish = (text, html, opt) => { if (done) return; done = true; if (unsub) try { unsub(); } catch (e) {} clearTimeout(tm); setBusy(false); talking = false; say(text, html || '', null, opt); };
+  const tm = setTimeout(() => finish('아직 답이 오지 않았습니다. 잠시 뒤 다시 물어봐 주세요.'), 300000);
+  pr.then(() => { try { unsub = dbx.doc('answers/' + id).onSnapshot(snap => { const d = snap && snap.exists && (typeof snap.data === 'function' ? snap.data() : snap.data); if (d && d.text) finish(String(d.text).slice(0, 3000), d.link ? `<div class="jrow"><a href="${esc(String(d.link))}" target="_blank" rel="noopener">↗ ${esc(String(d.link_label || '열기'))}</a></div>` : ''); }, () => {}); } catch (e) { finish('답을 받을 준비를 하지 못했습니다. 다시 시도해 주세요.'); } },
+    e => { const c = e && e.code; finish(c === 'claude_unavailable' ? '지금은 Claude에게 넘길 수 없습니다. 음성으로 말했다면 아래 버튼을 한 번 눌러 주세요. 그래도 안 되면 이 화면을 받아 줄 Claude 대화가 꺼져 있는 것입니다.' : c === 'not_granted' ? 'Claude에게 넘기는 권한(댓글)을 허용하지 않았습니다. 권한 창에서 허용해 주세요.' : `Claude에게 넘기지 못했습니다. (코드: ${c || '없음'})`,
+      '<div class="jrow"><button class="jact" data-relay="1">Claude에게 넘기기</button><button class="jact ghost" data-perm="1">권한 창 열기</button></div>', { quiet: c === 'claude_unavailable' }); });
+  return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r30'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r31'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
   if (mcp) { try { const lt = await tmo(mcp.listTools(), 12000); (lt && lt.servers || []).forEach(sv => { const nm = sv.name || sv.server || sv.displayName || '?', tl = (sv.tools || []).map(t => t.name || t).join(', '); add('서버 ' + nm, tl ? '도구 ' + tl : JSON.stringify(sv).slice(0, 160)); }); if (!(lt && lt.servers || []).length) add('서버 목록', '비어 있음 ' + JSON.stringify(lt).slice(0, 120)); } catch (e) { add('서버 목록', '실패 ' + ((e && e.code) || '') + ' ' + String((e && e.message) || '').slice(0, 80)); }
@@ -941,7 +959,9 @@ async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를
   if (sampler && !aiOff) { try { const r = await tmo(sampler('한 단어로만 답해: 준비됨', { modelTier: 'quick', cache: false }), 40000); add('시험 AI', '성공 ' + String(r.text).slice(0, 30)); } catch (e) { add('시험 AI', '실패 코드=' + ((e && e.code) || '?')); } }
   diagText = L.join('\n'); setBusy(false);
   say('연결 상태 점검 결과입니다. 아래 내용을 복사해서 Claude에게 보여주면 원인을 바로 찾을 수 있습니다.', `<div class="jcard"><p style="font-family:var(--mono);font-size:12px">${esc(diagText)}</p><div class="jrow"><button class="jact" data-dcopy="1">점검 결과 복사</button></div></div>`, null, { speech: '점검 결과를 화면에 띄웠습니다.' }); }
-async function pcSend(q) { setFocus(null); setBusy(true); say('PC의 Claude 대화를 찾고 있습니다.', '', null, { quiet: true });
+async function pcSend(q) { if (relayReady()) { const text = /사내망/.test(q) && /(열어|켜|실행)/.test(q) ? "내 PC에서 KAB 사내망 서버를 켜고 브라우저로 열어줘. 꺼져 있으면 바탕화면의 'KAB 서버 켜기.cmd'로 켜줘."
+      : /정리/.test(q) && /(파일|폴더|컴퓨터|바탕화면|다운로드|용량)/.test(q) ? `내 PC에서: ${q}\n먼저 무엇을 어디로 옮기거나 지울지 목록으로 보여주고, 내가 승인한 뒤에 실행해줘. 성적서, 엔진 폴더, 사내망 자료 같은 업무 자료는 지우지 마.` : '내 PC에서: ' + q; ccConfirm({ relay: true, title: '내 PC의 Claude', pc: true }, text); return; }
+  setFocus(null); setBusy(true); say('PC의 Claude 대화를 찾고 있습니다.', '', null, { quiet: true });
   try { await ccFetch(); setBusy(false); const pcs = ccList.filter(x => x.pc);
     if (!pcs.length) { say('PC에서 열려 있는 Claude 대화가 없습니다. PC에서 Claude 앱을 켜고 대화를 하나 열어 두면, 자비스가 그 대화에 일을 시킬 수 있습니다.'); return; }
     const want = /사내망|대시보드/.test(q) ? /대시보드|AI 운영체제/ : /백업|엔진/.test(q) ? /통합웹|사내|검토/ : null, t = (want && pcs.find(x => want.test(x.title) && x.state !== '작업 중')) || pcs.find(x => x.state !== '작업 중') || pcs[0];
@@ -950,7 +970,7 @@ async function pcSend(q) { setFocus(null); setBusy(true); say('PC의 Claude 대�
     ccConfirm(t, text); } catch (e) { connErr(e, 'Claude 작업'); } }
 const evText = ev => { const out = []; const walk = (v, d) => { if (!v || d > 8) return; if (Array.isArray(v)) v.forEach(x => walk(x, d + 1)); else if (typeof v === 'object') { if (v.type === 'text' && typeof v.text === 'string') out.push(v.text); else Object.values(v).forEach(x => walk(x, d + 1)); } }; walk(ev, 0); return out.join('\n').trim(); };
 let webRun = 0;
-async function webAsk(q) { setFocus(null); const run = ++webRun; setBusy(true); talking = true; say('인터넷에서 찾아보고 있습니다. 1~2분 걸릴 수 있습니다.', '', null, { quiet: true }); talking = true;
+async function webAsk(q) { if (relay(q)) return; setFocus(null); const run = ++webRun; setBusy(true); talking = true; say('인터넷에서 찾아보고 있습니다. 1~2분 걸릴 수 있습니다.', '', null, { quiet: true }); talking = true;
   try { const made = await conn(CC, 'create_session', { title: '자비스 웹 조사: ' + q.slice(0, 30), prompt: `다음 질문에 웹 검색으로 답해줘. 오늘 날짜 기준 최신 정보를 쓰고, 한국어 존댓말 3~6문장으로만 답해. 마크다운, 목록, 링크 나열 없이 소리 내어 읽기 좋게 쓰고, 출처 이름은 문장 안에 짧게 넣어. 사용자 위치는 한국이야. 파일을 만들거나 다른 작업은 하지 마.\n\n질문: ${q}` });
     const id = (JSON.stringify(made).match(/session_[A-Za-z0-9]+/) || [])[0]; if (!id) throw { code: 'parse', message: JSON.stringify(made).slice(0, 120) };
     const link = `<div class="jrow"><a href="https://claude.ai/code/${esc(id)}" target="_blank" rel="noopener">↗ 조사한 대화 열기</a></div>`;
@@ -1252,6 +1272,8 @@ if (window.claude && window.claude.use) {
     d.onFinal(e => { const t = (e.text || '').trim(); if (t) { d.stop().catch(() => {}); ask(t); } });
     d.onState(e => { $('#jmic').classList.toggle('rec', e.state === 'listening' || e.state === 'starting'); if (e.state === 'idle' && e.reason === 'unavailable') toast('이 기기에서는 한국어 받아쓰기를 쓸 수 없습니다. 글로 입력해 주세요.'); }); }).catch(() => {});
   window.claude.use('mcp').then(m => { mcp = m; }).catch(() => {});
+  window.claude.use('db').then(d => { dbx = d; }).catch(() => {});
+  window.claude.use('comments').then(c => { if (!c) return; cmt = c; c.anchorFor($('#jbar')).then(a => { relayAnchor = a; }, () => {}); c.canSendToClaude().then(v => { relayCan = v; }, () => {}); }).catch(() => {});
   window.claude.use('sample').then(f => { if (!f) return; sampler = f; f.limits().then(l => { aiTools = !!(l && l.tools); }, () => {}); }).catch(() => {});
   window.claude.use('tts').then(t => { if (!t) return; ctts = t; t.onState(e => { ttsOn = e.state === 'speaking'; }); }).catch(() => {});
 }
