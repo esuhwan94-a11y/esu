@@ -248,7 +248,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
         <div class="sample" id="sample" hidden>지금 보이는 건 예시 노트예요<button id="clear-sample">비우고 시작</button></div>
       </div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r31<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r32<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -617,6 +617,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.sel) { selSet.has(b.dataset.sel) ? selSet.delete(b.dataset.sel) : selSet.add(b.dataset.sel); renderVault(); }
   else if (b.dataset.dcopy) { try { navigator.clipboard.writeText(diagText).then(() => toast('복사했습니다.'), () => toast('복사하지 못했습니다. 화면을 캡처해 주세요.')); } catch (e) { toast('복사하지 못했습니다. 화면을 캡처해 주세요.'); } }
   else if (b.dataset.relay) { if (relayLast) relay(relayLast); }
+  else if (b.dataset.web) webAsk('지금 ' + b.dataset.web + ' 검색해서 알려줘');
   else if (b.dataset.diag) diagnose();
   else if (b.dataset.perm) openPerms();
   else if (b.dataset.cgo) ccGo();
@@ -950,7 +951,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r31'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r32'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1200,7 +1201,10 @@ function ask(raw) {
   if ((m = q.match(/^(.+?)\s*(?:작업|대화|세션)?\s*(?:에게|한테|에)\s*["“'‘]?(.+?)["”'’]?\s*(?:이라고|라고)\s*(?:전해|보내|말해|지시해)\s*줘?\s*$/))) { claudeSendTo(m[1], m[2]); return; }
   if (/(사내망)/.test(q) && /(열어|켜|실행)/.test(q) || /(컴퓨터|pc|피씨|바탕화면|다운로드 ?폴더|내 ?파일)/i.test(q) && /(정리|열어|켜|실행|옮겨|지워|찾아|백업|해줘)/.test(q) && !/(메모해|노트)/.test(q)) { pcSend(q); return; }
   if (/(답장|회신)/.test(q) && /(초안|써|만들|작성)/.test(q)) { mailDraft(q); return; }
-  if (/(날씨|뉴스|인터넷|웹에서|검색해서|환율|주가|시세|미세먼지|기온)/.test(q) && !/(메모해|노트|슬랙)/.test(q)) { webAsk(q); return; }
+  if (/(날씨|뉴스|인터넷|웹에서|검색해서|환율|주가|시세|미세먼지|기온)/.test(q) && !/(메모해|노트|슬랙)/.test(q)) {
+    const dn = /(날씨|기온)/.test(q) ? byId('day-weather') : /뉴스/.test(q) ? byId('day-news') : null, fresh = dn && new Date(dn.updated).toDateString() === new Date().toDateString();
+    if (fresh && !/(지금|실시간|검색|다시|최신|인터넷)/.test(q)) { const parts = dn.body.split(/\n\n/), main = parts[0]; setFocus(new Set([dn.id])); say(main, `<div class="jcard"><p class="jmeta">${rich(parts.slice(1).join('\n\n'))}</p><div class="jrow"><button class="jact ghost" data-web="${esc(q)}">지금 다시 검색</button></div></div>`); return; }
+    webAsk(q); return; }
   if (/(메일|이메일|편지함)/.test(q) && !/(메모|노트|찾아)/.test(q)) { if (/(지워|삭제|휴지통)/.test(q)) { mailDelete(q); return; } if (/(확인|읽어|보여|왔|온 ?거|있어|알려|체크|뭐)/.test(q)) { mailCheck(q); return; } }
   if (/(일정|캘린더|스케줄|약속)/.test(q) && /(뭐|알려|보여|확인|있지|있어|있나|읽어|체크)/.test(q) && !/(메모|노트|채널|찾아)/.test(q)) { calCheck(q); return; }
   if (/(슬랙|slack)/i.test(q) && /(확인|읽어|보여|뭐|알려|왔|있어|체크)/.test(q) && !/(메모|노트)/.test(q)) { slackCheck(q); return; }
