@@ -87,9 +87,9 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 /* Jarvis console */
 .jarvis{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(52px + env(safe-area-inset-bottom, 0px));width:min(600px,calc(100% - var(--gl) - var(--gr)));display:flex;flex-direction:column;gap:8px}
 .jout{background:linear-gradient(var(--accent-hi),var(--accent-hi)) top left/18px 2px no-repeat,linear-gradient(var(--accent-hi),var(--accent-hi)) top left/2px 18px no-repeat,linear-gradient(var(--accent-hi),var(--accent-hi)) bottom right/18px 2px no-repeat,linear-gradient(var(--accent-hi),var(--accent-hi)) bottom right/2px 18px no-repeat,rgba(14,8,12,.9);backdrop-filter:blur(10px);border:1px solid rgba(255,79,163,.35);border-radius:3px;padding:12px 14px;max-height:min(36vh,330px);overflow-y:auto;box-shadow:0 0 40px rgba(255,79,163,.12)}
-#jout{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(640px,calc(100% - var(--gl) - var(--gr)));max-height:min(68vh,620px);z-index:20;padding:16px 18px;box-shadow:0 0 0 1px rgba(255,79,163,.25),0 0 70px rgba(255,79,163,.3),0 30px 80px rgba(0,0,0,.65)}
+#jout{position:absolute;left:50%;top:40%;transform:translateX(-50%);width:min(640px,calc(100% - var(--gl) - var(--gr)));max-height:calc(60% - 112px);z-index:20;padding:16px 18px;box-shadow:0 0 0 1px rgba(255,79,163,.25),0 0 70px rgba(255,79,163,.3),0 30px 80px rgba(0,0,0,.65)}
 #jout.pop{animation:jpop .24s cubic-bezier(.2,.9,.3,1.25)}
-@keyframes jpop{from{opacity:0;transform:translate(-50%,-50%) scale(.84)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@keyframes jpop{from{opacity:0;transform:translateX(-50%) scale(.84)}to{opacity:1;transform:translateX(-50%) scale(1)}}
 #jout .jsay{font-size:16.5px;line-height:1.6;margin:12px 0 4px}
 #jout .jhead button{font-size:13px;padding:6px 12px;border:1px solid rgba(255,79,163,.4);border-radius:8px;color:var(--fg)}
 .jhead{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;letter-spacing:.18em;color:var(--accent);text-shadow:0 0 10px rgba(255,79,163,.8)}
@@ -248,7 +248,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
         <div class="sample" id="sample" hidden>지금 보이는 건 예시 노트예요<button id="clear-sample">비우고 시작</button></div>
       </div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r32<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r33<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -407,16 +407,16 @@ function build() {
 /* ---------- canvas: 3D hologram ---------- */
 const cv = $('#cv'), ctx = cv.getContext('2d');
 const MONO = css('--mono'), SANS = css('--sans'), F = 900;
-let W = 0, H = 0, dpr = 1, alpha = 1, bootT = null, pingT = -1e9, frame = 0, hudTop = 150;
+let W = 0, H = 0, dpr = 1, alpha = 1, bootT = null, pingT = -1e9, frame = 0, hudTop = 150, solo = 0, flashT = -1e9, micOn = false;
 const cam = { k:1, ry:.6, rx:.42, tx:0, ty:0, tz:0, oy:0 }; let camTo = null, flat = false, cR = 1, sR = 0, cP = 1, sP = 0;
-let focus = null, hover = null, talking = false, talk = 0, ticker = '', showNames = false; try { showNames = localStorage.getItem('sb-names') === '1'; } catch (e) {}
+let soloShift = 0, focus = null, hover = null, talking = false, talk = 0, ticker = '', showNames = false; try { showNames = localStorage.getItem('sb-names') === '1'; } catch (e) {}
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dust = Array.from({ length:280 }, () => { const r = 110 + Math.pow(Math.random(), .7) * 600; return { r, a:Math.random()*6.283, y:(Math.random()-.5) * (50 + r*.2), s:Math.random()*1.3+.5, p:Math.random()*6.283 }; });
 function resize() { const r = cv.getBoundingClientRect(); dpr = Math.min(devicePixelRatio || 1, 2); W = r.width; H = r.height; cv.width = W*dpr; cv.height = H*dpr; }
 new ResizeObserver(resize).observe(cv);
 function proj(x, y, z) { x -= cam.tx; y -= cam.ty; z -= cam.tz;
   const x1 = x*cR + z*sR, z1 = -x*sR + z*cR, y2 = y*cP - z1*sP, z2 = y*sP + z1*cP, s = cam.k * F / Math.max(140, F + z2 * cam.k);
-  return [W/2 + x1*s, H/2 + cam.oy + y2*s, s, z2]; }
+  return [W/2 + x1*s, H/2 + cam.oy + soloShift + y2*s, s, z2]; }
 const sprites = new Map();
 function glow(color, x, y, r, a) { let c = sprites.get(color);
   if (!c) { c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -453,11 +453,12 @@ function draw(ts) {
   cR = Math.cos(cam.ry); sR = Math.sin(cam.ry); cP = Math.cos(cam.rx); sP = Math.sin(cam.rx);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalCompositeOperation = 'source-over'; ctx.clearRect(0, 0, W, H); ctx.setLineDash([]);
   ctx.globalCompositeOperation = 'lighter';
-  const core = proj(0, 0, 0), cx = core[0], cy = core[1], cs = core[2] * ez, dim = focus ? .45 : 1;
+  solo += ((!$('#jout').hidden || micOn ? 1 : 0) - solo) * (reduce ? 1 : .11); soloShift = -solo * (H * .3 - 40); const vis = solo < .01 ? 1 : 1 - solo, fl = reduce ? 0 : Math.max(0, 1 - (ts - flashT) / 650); // while Jarvis listens or answers, the notes fade and only the core stays
+  const core = proj(0, 0, 0), cx = core[0], cy = core[1], cs = core[2] * ez, dim = focus && solo < .5 ? .45 : 1;
   // orbiting dust
   ctx.fillStyle = ACCHI;
   for (const d of dust) { const a = d.a + t * .045 * (300 / d.r), p = proj(Math.cos(a) * d.r * ez, d.y, Math.sin(a) * d.r * ez); if (p[0] < 0 || p[0] > W || p[1] < 0 || p[1] > H) continue;
-    ctx.globalAlpha = (.16 + .3 * Math.sin(t * 1.4 + d.p) ** 2) * ez * clamp(p[2] / cam.k, .3, 1.2) * (focus ? .5 : 1); const sz = d.s * clamp(p[2], .6, 2); ctx.fillRect(p[0], p[1], sz, sz); }
+    ctx.globalAlpha = (.16 + .3 * Math.sin(t * 1.4 + d.p) ** 2) * ez * clamp(p[2] / cam.k, .3, 1.2) * (focus ? .5 : 1) * vis; const sz = d.s * clamp(p[2], .6, 2); ctx.fillRect(p[0], p[1], sz, sz); }
   // holo table: polar grid, tick ring, radar sweep
   ctx.strokeStyle = ACC; ctx.lineWidth = 1;
   for (let r = 100; r <= 600; r += 100) { ctx.globalAlpha = (r % 200 ? .09 : .16) * ez * dim; ring3(r * ez, 0, 0, 0, 6.283); }
@@ -486,31 +487,32 @@ function draw(ts) {
   talk += ((talking || ttsOn || (window.speechSynthesis && speechSynthesis.speaking) ? 1 : 0) - talk) * .12;
   if (talk > .02) { ctx.strokeStyle = ACCHI; ctx.lineWidth = 2;
     for (let i = 0; i < 90; i++) { const a = i * .0698, h = (4 + 30 * Math.abs(Math.sin(i * 1.7 + t * 9) * Math.sin(i * .37 + t * 5.3))) * talk * cs, r0 = 104 * cs; ctx.globalAlpha = .85 * talk; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a)*r0, cy + Math.sin(a)*r0); ctx.lineTo(cx + Math.cos(a)*(r0 + h), cy + Math.sin(a)*(r0 + h)); ctx.stroke(); } }
-  const pr = (1 + .07 * Math.sin(t * 2.4) + .12 * talk * Math.abs(Math.sin(t * 11))) * cs; glow(ACC, cx, cy, 95 * pr, focus ? .45 : .9); glow(ACCHI, cx, cy, 40 * pr, focus ? .6 : 1);
+  const pr = (1 + .07 * Math.sin(t * 2.4) + .12 * talk * Math.abs(Math.sin(t * 11)) + .75 * solo + .9 * fl * fl) * cs; glow(ACC, cx, cy, 95 * pr, focus && solo < .5 ? .45 : .9); glow(ACCHI, cx, cy, 40 * pr, focus && solo < .5 ? .6 : 1);
+  if (fl > 0) { glow('#ffffff', cx, cy, (60 + 260 * (1 - fl)) * cs, fl * .9); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2 + 4 * fl; ctx.globalAlpha = fl; arc(cx, cy, (40 + 420 * (1 - fl)) * cs, 0, 6.283); ctx.globalAlpha = fl * .5; arc(cx, cy, (40 + 260 * (1 - fl)) * cs, 0, 6.283); ctx.strokeStyle = ACC; }
   // project nodes, draw links with travelling pulses
   for (const n of nodes) { const p = proj(n.x, n.y, n.z); n.sx = p[0]; n.sy = p[1]; n.ss = p[2]; n.sz = p[3]; }
   const dens = clamp(45 / nodes.length, .32, 1), pstep = Math.max(1, Math.ceil(links.length / 90)); let li = 0;
   for (const l of links) { li++; const on = focus && ((focus.ids.has(l.a.id) && (focus.ids.has(l.b.id) || focus.near.has(l.b.id))) || (focus.ids.has(l.b.id) && focus.near.has(l.a.id)));
     const ax = l.a.sx, ay = l.a.sy, bx = l.b.sx, by = l.b.sy, df = clamp((l.a.ss + l.b.ss) / 2 / cam.k, .35, 1.15);
-    ctx.globalAlpha = (focus ? (on ? .9 : .05) : (.26 + l.w*.14) * (.45 + .55 * dens)) * ez * df; ctx.strokeStyle = on ? ACCHI : ACC; ctx.lineWidth = on ? 1.5 : .8;
+    ctx.globalAlpha = (focus ? (on ? .9 : .05) : (.26 + l.w*.14) * (.45 + .55 * dens)) * ez * df * vis; ctx.strokeStyle = on ? ACCHI : ACC; ctx.lineWidth = on ? 1.5 : .8;
     ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-    if (!reduce && (on || (!focus && li % pstep === 0))) { const p = (t * .3 + l.ph) % 1; glow(ACCHI, ax + (bx-ax)*p, ay + (by-ay)*p, on ? 7 : 5, (on ? 1 : .8) * Math.sin(p * 3.1416) * df); } }
+    if (!reduce && (on || (!focus && li % pstep === 0))) { const p = (t * .3 + l.ph) % 1; glow(ACCHI, ax + (bx-ax)*p, ay + (by-ay)*p, on ? 7 : 5, (on ? 1 : .8) * Math.sin(p * 3.1416) * df * vis); } }
   // nodes, far to near
   const rank = focus ? new Map(focus.order.slice(0, W < 520 ? 3 : 5).map((id, i) => [id, i])) : null, order = nodes.slice().sort((a, b) => b.sz - a.sz), callouts = [];
-  for (const n of order) { if (n.kind === 'core') continue; const x = n.sx, y = n.sy; if (x < -80 || x > W+80 || y < -80 || y > H+80) continue;
+  for (const n of order) { if (n.kind === 'core' || vis < .04) continue; const x = n.sx, y = n.sy; if (x < -80 || x > W+80 || y < -80 || y > H+80) continue;
     const isF = focus && focus.ids.has(n.id), depth = clamp(.3 + (n.ss / cam.k - .62) * 1.6, .3, 1);
-    const a = (!focus || isF ? 1 : focus.near.has(n.id) ? .5 : .12) * (isF ? 1 : depth) * clamp((ez * 800 - Math.hypot(n.x, n.y, n.z)) / 120 + (boot >= 1 ? 1 : 0), 0, 1);
+    const a = vis * (!focus || isF ? 1 : focus.near.has(n.id) ? .5 : .12) * (isF ? 1 : depth) * clamp((ez * 800 - Math.hypot(n.x, n.y, n.z)) / 120 + (boot >= 1 ? 1 : 0), 0, 1);
     const r = n.r * clamp(n.ss, .8, 2.4);
     glow(n.color, x, y, r * (n.kind === 'hub' ? 4 : 3.3) * (isF ? 1 : .6 + .4 * dens), a * (isF ? .9 : .8 * dens));
     ctx.fillStyle = ctx.strokeStyle = n.color; ctx.lineWidth = 1; ctx.globalAlpha = a * .7;
     if (n.kind === 'hub') hex(x, y, r + 5, t * .25 + n.x * .01); else arc(x, y, r + 2.5, 0, 6.283);
     if (n.note && n.note.locked) { ctx.globalAlpha = a * .9; ctx.strokeStyle = '#fff0f7'; ctx.strokeRect(x - r - 5.5, y - r - 5.5, r * 2 + 11, r * 2 + 11); ctx.strokeStyle = n.color; }
-    if (isF) { const rot = t * 1.2 + n.y * .01, R = r + 8; ctx.strokeStyle = ACCHI; ctx.lineWidth = 1.6; ctx.globalAlpha = 1;
+    if (isF && vis > .6) { const rot = t * 1.2 + n.y * .01, R = r + 8; ctx.strokeStyle = ACCHI; ctx.lineWidth = 1.6; ctx.globalAlpha = 1;
       for (let i = 0; i < 4; i++) arc(x, y, R, rot + i * 1.5708, rot + i * 1.5708 + .85);
       const p = reduce ? .5 : (t * .8 + n.x * .01) % 1; ctx.globalAlpha = 1 - p; ctx.lineWidth = 1; arc(x, y, R + p * 18, 0, 6.283); }
     if (n === hover) { ctx.globalAlpha = 1; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; arc(x, y, r + 4, 0, 6.283); }
     const title = n.label.length > 16 ? n.label.slice(0, 15) + '…' : n.label;
-    if (rank && rank.has(n.id)) { callouts.push([n, r, title]); continue; }
+    if (rank && rank.has(n.id)) { if (vis > .6) callouts.push([n, r, title]); continue; }
     const show = n === hover || (showNames && (n.kind !== 'note' ? (cam.k > .4 && (dens > .6 || n.r > 7 || cam.k > 1)) : (!focus && n.ss > 1.2)));
     if (show) { ctx.textAlign = 'center'; ctx.font = (n.kind === 'hub' ? '600 10.5px ' + MONO : '500 11.5px ' + SANS); ctx.globalAlpha = a * (n.kind === 'note' ? .95 : .85); ctx.fillStyle = n.kind === 'note' ? '#f6ecf1' : ACCHI; ctx.fillText(title, x, y + r + 16); }
   }
@@ -552,7 +554,7 @@ function fit(ids) {
 function setFocus(ids) {
   if (!ids || !ids.size) { focus = null; return; }
   const nearSet = new Set(); ids.forEach(id => (adj.get(id) || []).forEach(o => { if (!ids.has(o)) nearSet.add(o); }));
-  focus = { ids, near: nearSet, order: [...ids] }; pingT = performance.now(); fit(ids);
+  focus = { ids, near: nearSet, order: [...ids] }; pingT = performance.now(); fit();
 }
 
 /* pointer: drag to rotate, pinch or wheel to zoom, tap to open */
@@ -744,7 +746,7 @@ function speak(text) { if (!voiceOn) return; let vp = ''; try { vp = localStorag
   synth(text); }
 function synth(text) { if (!('speechSynthesis' in window)) return; try { const busyNow = speechSynthesis.speaking || speechSynthesis.pending; if (busyNow) speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/[「」“”#]/g, ' ')); u.lang = 'ko-KR'; u.rate = 1.02; u.pitch = 1.05; const vs = speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)); let pref = ''; try { pref = localStorage.getItem('sb-voice') || ''; } catch (x) {} const fv = vs.find(v => v.name === pref) || vs.find(v => /female|yuna|sora|heami|sun-?hi|seoyeon|여/i.test(v.name)) || vs[0]; if (fv) u.voice = fv; const go = () => { try { speechSynthesis.resume(); speechSynthesis.speak(u); } catch (e) {} }; busyNow ? setTimeout(go, 160) : go(); } catch (e) {} }
 function say(text, html, action, opt) {
-  const out = $('#jout'), p = $('#jsay'); const wasHidden = out.hidden; out.hidden = false; out.scrollTop = 0; if (wasHidden && !reduce) { out.classList.remove('pop'); void out.offsetWidth; out.classList.add('pop'); } if (!(opt && opt.quiet)) { blip(1700, 1700, .055, .05); setTimeout(() => blip(2300, 2300, .085, .05), 85); } $('#hints').hidden = true; $('#jres').innerHTML = html || '';
+  const out = $('#jout'), p = $('#jsay'); const wasHidden = out.hidden; out.hidden = false; out.scrollTop = 0; if (wasHidden && !reduce) { out.classList.remove('pop'); void out.offsetWidth; out.classList.add('pop'); } if (!(opt && opt.quiet)) { flashT = performance.now(); blip(1700, 1700, .055, .05); setTimeout(() => blip(2300, 2300, .085, .05), 85); } $('#hints').hidden = true; $('#jres').innerHTML = html || '';
   if (action) { const b = document.createElement('button'); b.className = 'jact'; b.textContent = action.label; b.onclick = action.run; $('#jres').append(b); }
   clearInterval(typeT); p.classList.remove('done'); p.textContent = ''; let i = 0; talking = !reduce;
   if (reduce) { p.textContent = text; p.classList.add('done'); } else typeT = setInterval(() => { p.textContent = text.slice(0, i += 2); if (i >= text.length) { clearInterval(typeT); p.classList.add('done'); talking = false; } }, 22);
@@ -951,7 +953,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r32'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r33'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1171,7 +1173,7 @@ function pick(id) { const n = byId(id); if (!n || !nodeById.get(id)) return; if 
   setFocus(new Set([id])); blip(900, 1500, .12, .04); }
 function ask(raw) {
   const q = raw.trim(); if (!q) return; show('graph'); $('#jq').value = '';
-  const bar = $('#jbar'); bar.classList.add('busy'); setTimeout(() => bar.classList.remove('busy'), 900);
+  const bar = $('#jbar'); bar.classList.add('busy'); setTimeout(() => bar.classList.remove('busy'), 900); flashT = performance.now();
   let m;
   if (/^(잠가|잠금|잠그기|다시 잠)/.test(q) && !/(풀어|해제|없애)/.test(q)) { relock(); say('중요 노트를 다시 잠갔습니다.'); return; }
   const topicNotes = t => { const tk = tokens(t).map(x => x.replace('#', '')); return tk.length ? db.notes.filter(n => tk.some(k => n.title.toLowerCase().includes(k) || n.tags.some(g => g.toLowerCase().includes(k)))) : []; };
@@ -1274,7 +1276,7 @@ if (window.claude && window.claude.use) {
   window.claude.use('dictation').then(d => { if (!d) { $('#jmic').style.opacity = .45; return; } dict = d;
     d.onPartial(e => { $('#jq').value = e.text; });
     d.onFinal(e => { const t = (e.text || '').trim(); if (t) { d.stop().catch(() => {}); ask(t); } });
-    d.onState(e => { $('#jmic').classList.toggle('rec', e.state === 'listening' || e.state === 'starting'); if (e.state === 'idle' && e.reason === 'unavailable') toast('이 기기에서는 한국어 받아쓰기를 쓸 수 없습니다. 글로 입력해 주세요.'); }); }).catch(() => {});
+    d.onState(e => { micOn = e.state === 'listening' || e.state === 'starting'; if (micOn) flashT = performance.now(); $('#jmic').classList.toggle('rec', micOn); if (e.state === 'idle' && e.reason === 'unavailable') toast('이 기기에서는 한국어 받아쓰기를 쓸 수 없습니다. 글로 입력해 주세요.'); }); }).catch(() => {});
   window.claude.use('mcp').then(m => { mcp = m; }).catch(() => {});
   window.claude.use('db').then(d => { dbx = d; }).catch(() => {});
   window.claude.use('comments').then(c => { if (!c) return; cmt = c; c.anchorFor($('#jbar')).then(a => { relayAnchor = a; }, () => {}); c.canSendToClaude().then(v => { relayCan = v; }, () => {}); }).catch(() => {});
