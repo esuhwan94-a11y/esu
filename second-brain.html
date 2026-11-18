@@ -938,6 +938,49 @@ async function shipCheck(q) { setFocus(null);
     say(`${label} 건은 ${rows.length}건입니다. ${Object.entries(cnt).map(([k, v]) => `${k} ${v}건`).join(', ')}. 업체는 ${names.slice(0, 6).join(', ')}${names.length > 6 ? ' 외 ' + (names.length - 6) + '곳' : ''}입니다.${extra}`,
       rows.map(row).join(''), null, { speech: `${label} 업체는 ${names.map(x => String(x).replace(/㈜|\(주\)|주식회사/g, '').trim()).join(', ')}.` });
   } catch (e) { connErr(e, SB); } }
+/* the rest of the shipping web app: event history, packing, slip queue, and everything about one company (all read-only) */
+const KW_DROP = /(출고|출하|이력|기록|누가|언제|처리|파레트|팔레트|박스|포장|패킹|전표|대기|현황|몇|알려|보여|뭐|어디|확인|오늘|어제|내일|이번|최근|목록|리스트|해줘|말해|있|했|됐|좀|관련|전부|전체|정보|대해|나갔|보냈|준비|배차|작업|대리점|^개$|^수$|^다$|^건$|^거$|^것$)/;
+const cleanKw = q => tokens(q).filter(t => !KW_DROP.test(t)).map(t => t.replace(/[^0-9a-zA-Z가-힣()㈜]/g, '')).filter(t => t.length >= 2);
+const coShort = x => String(x || '').replace(/㈜|\(주\)|\(유\)|주식회사/g, '').trim();
+const KDAY = "date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul'";
+async function histCheck(q) { setFocus(null); const kw = cleanKw(q), w = [];
+  if (kw.length) w.push('(' + kw.map(k => `company_snapshot ilike '%${k}%'`).join(' or ') + ')');
+  let label = kw.length ? `“${kw.join(' ')}” ` : '최근 '; if (/어제/.test(q)) { w.push(`created_at >= ${KDAY} - interval '1 day' and created_at < ${KDAY}`); label += '어제 '; } else if (/오늘/.test(q)) { w.push(`created_at >= ${KDAY}`); label += '오늘 '; }
+  setBusy(true); say('출고 이력을 확인하고 있습니다.', '', null, { quiet: true });
+  try { const rows = await sql(`select company_snapshot as company, label, actor_name, pallets, created_at from public.job_events ${w.length ? 'where ' + w.join(' and ') : ''} order by created_at desc limit 40`); setBusy(false);
+    if (!rows.length) { say(`${label}출고 이력이 없습니다. 통합웹 이력은 정상으로 읽었습니다.`); return; }
+    const r0 = rows[0]; say(`${label}출고 이력은 ${rows.length}건입니다. 가장 최근은 ${pgDate(r0.created_at)} ${r0.company}, ${r0.label}${r0.actor_name ? ', 처리한 사람은 ' + r0.actor_name : ''}입니다.`,
+      rows.map(r => `<div class="sk"><b>${esc(r.company || '')} <small>${esc(r.label || '')}${r.pallets ? ' · ' + r.pallets + 'P' : ''}</small></b><small>${pgDate(r.created_at)}${r.actor_name ? ' · ' + esc(r.actor_name) : ''}</small></div>`).join(''), null, { speech: `${label}출고 이력 ${rows.length}건입니다. 최근은 ${coShort(r0.company)}, ${r0.label}입니다.` });
+  } catch (e) { connErr(e, SB); } }
+async function packCheck(q) { setFocus(null); const kw = cleanKw(q), sel = 'select j.company, p.pallet_count, p.box_count, p.updated_at, j.ready_at, j.shipped_at from public.kab_job_packing p join public.jobs j on j.id = p.job_id';
+  setBusy(true); say('포장 기록을 확인하고 있습니다.', '', null, { quiet: true });
+  try { let rows = await sql(`${sel} where ${kw.length ? kw.map(k => `j.company ilike '%${k}%'`).join(' or ') : 'j.shipped_at is null'} order by p.updated_at desc limit 40`), label = kw.length ? `“${kw.join(' ')}” 포장 기록` : '아직 안 나간 작업의 포장 기록';
+    if (!rows.length) { rows = await sql(`${sel} order by p.updated_at desc limit 15`); label = (kw.length ? `“${kw.join(' ')}”로는 없어서 ` : '안 나간 작업에는 없어서 ') + '최근 포장 기록'; }
+    setBusy(false); if (!rows.length) { say('통합웹에 포장 기록이 없습니다.'); return; }
+    say(`${label}은 ${rows.length}건입니다. ` + rows.slice(0, 4).map(r => `${r.company} 파레트 ${r.pallet_count ?? 0}개, 박스 ${r.box_count ?? 0}개`).join('. ') + '.',
+      rows.map(r => `<div class="sk"><b>${esc(r.company)} <small>파레트 ${r.pallet_count ?? 0} · 박스 ${r.box_count ?? 0}</small></b><small>${jobState(r)} · 입력 ${pgDate(r.updated_at)}</small></div>`).join(''), null, { speech: rows.slice(0, 5).map(r => `${coShort(r.company)} 파레트 ${r.pallet_count ?? 0}개, 박스 ${r.box_count ?? 0}개`).join('. ') + '.' });
+  } catch (e) { connErr(e, SB); } }
+async function slipCheck(q) { setFocus(null); const kw = cleanKw(q);
+  setBusy(true); say('출고전표 목록을 확인하고 있습니다.', '', null, { quiet: true });
+  try { const rows = await sql(`select company, pack_no, pack_kind, total_qty, earliest_due, status, slip_date, created_at from public.kab_slip_queue where cancelled_at is null${kw.length ? ' and (' + kw.map(k => `company ilike '%${k}%'`).join(' or ') + ')' : ''} order by created_at desc limit 40`); setBusy(false);
+    if (!rows.length) { say('통합웹 출고전표 목록에 남아 있는 건이 없습니다.'); return; }
+    const cnt = {}; rows.forEach(r => { cnt[r.status || '상태 없음'] = (cnt[r.status || '상태 없음'] || 0) + 1; });
+    say(`출고전표 목록은 ${rows.length}건입니다. ${Object.entries(cnt).map(([k, v]) => `${k} ${v}건`).join(', ')}.`, rows.map(r => `<div class="sk"><b>${esc(r.company || '')} <small>${esc(r.status || '')}${r.pack_no ? ' · ' + esc(String(r.pack_no)) : ''}</small></b><small>수량 ${r.total_qty ?? ''}${r.earliest_due ? ' · 납기 ' + esc(String(r.earliest_due)) : ''}${r.slip_date ? ' · 전표일 ' + esc(String(r.slip_date)) : ''} · 등록 ${pgDate(r.created_at)}</small></div>`).join(''));
+  } catch (e) { connErr(e, SB); } }
+let coNames = null; try { const c = JSON.parse(localStorage.getItem('sb-co') || 'null'); if (c && Date.now() - c.at < 864e5 && Array.isArray(c.names)) coNames = c.names; } catch (e) {}
+async function companyTry(q) { if (!mcp) return false; const kw = cleanKw(q); if (!kw.length) return false;
+  try { if (!coNames) { coNames = (await sql('select name from public.dealers union select distinct company as name from public.jobs limit 300')).map(r => String(r.name || '')).filter(Boolean); try { localStorage.setItem('sb-co', JSON.stringify({ at: Date.now(), names: coNames })); } catch (e) {} }
+    const hit = kw.filter(k => coNames.some(n => coShort(n).includes(k))); if (!hit.length) return false; companyAll(hit); return true; } catch (e) { return false; } }
+async function companyAll(kw) { setFocus(null); const like = col => '(' + kw.map(k => `${col} ilike '%${k}%'`).join(' or ') + ')'; setBusy(true); say(`“${kw.join(' ')}”에 대해 통합웹 전체를 확인하고 있습니다.`, '', null, { quiet: true });
+  try { const [dl, jb, ev, tt] = await Promise.all([sql(`select name, address, default_shipping, depot from public.dealers where ${like('name')} limit 3`), sql(`select company, note, pallets, shipping_mode, created_at, ready_at, dispatched_at, shipped_at from public.jobs where ${like('company')} order by created_at desc limit 8`),
+      sql(`select company_snapshot as company, label, actor_name, created_at from public.job_events where ${like('company_snapshot')} order by created_at desc limit 6`), sql(`${TATA_ITEMS} select count(*) as cards, coalesce(sum((i->>'remaining')::int), 0) as remaining from it where ${like("i->>'company'")} and (i->>'remaining')::int > 0`).catch(() => [])]);
+    setBusy(false); const open = jb.filter(j => !j.shipped_at), name = (dl[0] && dl[0].name) || (jb[0] && jb[0].company) || kw.join(' '), tc = tt[0] && +tt[0].cards;
+    if (!dl.length && !jb.length && !ev.length && !tc) { say(`통합웹에서 “${kw.join(' ')}” 관련 자료를 찾지 못했습니다.`, relayBtn(kw.join(' '))); return; }
+    const parts = [dl[0] ? `주소는 ${dl[0].address || '등록 안 됨'}${dl[0].default_shipping ? ', 기본 배송은 ' + dl[0].default_shipping : ''}` : '주소록에는 없습니다', open.length ? `안 나간 작업 ${open.length}건(${open.map(jobState).join(', ')})` : '안 나간 작업은 없습니다', ev[0] ? `최근 이력은 ${pgDate(ev[0].created_at)} ${ev[0].label}` : '', tc ? `타타대우 납품카드 남은 것 ${tc}건, 수량 ${tt[0].remaining}개` : ''].filter(Boolean);
+    say(`${name}: ${parts.join('. ')}.`, (dl.length ? '<div class="skh">주소록</div>' + dl.map(r => `<div class="sk"><b>${esc(r.name)}${r.default_shipping ? ` <small>${esc(r.default_shipping)}</small>` : ''}</b><small>${esc(r.address || '주소 없음')}${r.depot ? '<br>영업소: ' + esc(r.depot) : ''}</small></div>`).join('') : '')
+      + (jb.length ? `<div class="skh">작업 · 최근 ${jb.length}건</div>` + jb.map(j => `<div class="sk"><b>${esc(j.company)} <small>${jobState(j)}${j.shipping_mode ? ' · ' + esc(j.shipping_mode) : ''}${j.pallets ? ' · ' + j.pallets + 'P' : ''}</small></b><small>${esc(String(j.note || '').slice(0, 160))}<br>등록 ${pgDate(j.created_at)}${j.shipped_at ? ' · 출고 ' + pgDate(j.shipped_at) : ''}</small></div>`).join('') : '')
+      + (ev.length ? '<div class="skh">최근 이력</div>' + ev.map(r => `<div class="sk"><b>${esc(r.label || '')}</b><small>${pgDate(r.created_at)}${r.actor_name ? ' · ' + esc(r.actor_name) : ''}</small></div>`).join('') : ''), null, { speech: `${coShort(name)}. ${parts.join('. ')}.` });
+  } catch (e) { connErr(e, SB); } }
 /* 타타대우 납품카드(통합웹 kab_oem_state.payload.items): 납기별 현황과 상세 */
 const TATA_ITEMS = "with it as (select jsonb_array_elements(payload->'items') i from public.kab_oem_state where id='tata')";
 const dueStr = (y, m, d) => `${y}.${pad2(m)}.${pad2(d)}`;
@@ -1336,6 +1379,9 @@ function ask(raw) {
   if (/드라이브/.test(q) && /(찾아|검색|어디|있어|보여)/.test(q)) { driveSearch(q); return; }
   if (/(주소|주소록|연락처|전화번호|전화)/.test(q) && !/(메모해|노트|메일|찾아줘 노트)/.test(q)) { dealerLookup(q); return; }
   if (/(타타|납품카드|납기)/.test(q) && /(현황|언제|뭐|남은|알려|보여|있어|있지|몇|전표|카드|확인|일정)/.test(q) && !/(메모해|노트|슬랙|규칙|왜|어떻게)/.test(q)) { tataCheck(q); return; }
+  if (/(파레트|팔레트|박스 ?수|박스|포장|패킹)/.test(q) && /(몇|수|알려|현황|얼마|보여|확인|어떻게|됐|있)/.test(q) && !/(메모해|노트|타타|스킬|주문)/.test(q)) { packCheck(q); return; }
+  if (/(이력|누가|처리했|언제 ?(나갔|출고|준비|보냈))/.test(q) && /(출고|출하|준비|배차|대리점|작업|처리|나갔|보냈)/.test(q) && !/(메모해|노트|스킬|클로드|메일)/.test(q)) { histCheck(q); return; }
+  if (/전표/.test(q) && /(대기|목록|현황|뭐|알려|보여|있|몇|확인)/.test(q) && !/(타타|납품카드|성적서|메모해|노트)/.test(q)) { slipCheck(q); return; }
   if (/(출고|출하|배차|대리점|작업 ?목록|작업 ?리스트|할 ?일|해야 ?할)/.test(q) && /(지시|현황|대기|남은|업체|어디|뭐|있|알려|보여|확인|완료|건|나갈|예정|말해|준비|대리점|목록|리스트|작업|할 ?일|내일|오늘)/.test(q) && !/(메모해|노트|기록|찾아|메일|관련|있었|스킬)/.test(q)) { shipCheck(q); return; }
   if (/스킬/.test(q) && /(추천|어떤|뭐|무슨|쓰면|써야|사용하|사용해|배열|골라|필요)/.test(q)) { advise(q); return; }
   if (/^(전체|리셋|초기화|전체 ?보기|처음으로)/.test(q)) { setFocus(null); $('#jout').hidden = true; fit(); say('전체 그래프로 돌아왔습니다. 노트 ' + db.notes.length + '개가 연결되어 있습니다.'); return; }
@@ -1343,6 +1389,7 @@ function ask(raw) {
     const text = m[1].trim(), n = newNote(text.length > 28 ? text.slice(0, 28) + '…' : text, text, 'idea');
     setTimeout(() => setFocus(new Set([n.id])), 60);
     say(`기록했습니다. 「${n.title}」을 아이디어 폴더에 넣어 두었습니다.`, '', { label:'열어서 다듬기', run:() => openNote(n.id) }); return; }
+  if (mcp && !ask.noCo && q[0] !== '#' && q.length <= 22 && q.split(/\s+/).length <= 3 && !/(열어|열기|메모|노트|스킬|클로드)/.test(q)) { companyTry(q).then(ok => { if (!ok) { ask.noCo = true; try { ask(q); } finally { ask.noCo = false; } } }); return; } // a bare company name: answer from every table of the shipping web app
   const open = q.match(/^(.+?)\s*(?:열어 ?줘|열기|열어)$/);
   if (!open && sampler && !aiOff && looksLikeQuestion(q)) { askAI(q); return; }
   const { tk, hits } = search(open ? open[1] : q);

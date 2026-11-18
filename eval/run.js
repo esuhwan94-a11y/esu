@@ -6,7 +6,7 @@ const T2I = {}; try { const raw = fs.readFileSync(path.join(__dirname, '..', 'va
 (async () => { const b = await chromium.launch(); const rows = [];
   for (const item of Q) { try { const p = await b.newPage({ viewport: { width: 1280, height: 780 } }); const errs = []; p.on('pageerror', e => errs.push(e.message));
     await p.addInitScript(() => { const T = window.__t = { mcp: [], sql: [], sent: [], ai: 0 };
-      const mcp = { callTool: async (server, tool, input) => { T.mcp.push(server); if (tool === 'execute_sql') { T.sql.push(String(input && input.query || '')); return { payload: '[]' }; }
+      const mcp = { callTool: async (server, tool, input) => { T.mcp.push(server); if (tool === 'execute_sql') { const sq = String(input && input.query || ''); T.sql.push(sq); return { payload: /select name from public\.dealers union/.test(sq) ? JSON.stringify([{ name: '㈜국도특장' }]) : '[]' }; }
         if (tool === 'search_threads') return { payload: { threads: [{ id: 't1', messages: [{ sender: 'a@b.com', subject: '견적 문의', snippet: '견적 부탁드립니다', date: new Date().toISOString() }] }] } };
         if (tool === 'get_thread') return { payload: { messages: [{ plaintextBody: '본문' }] } };
         if (tool === 'list_events') return { payload: JSON.stringify({ events: [{ summary: '소재입고', start: { dateTime: new Date().toISOString() } }] }) };
@@ -20,7 +20,7 @@ const T2I = {}; try { const raw = fs.readFileSync(path.join(__dirname, '..', 'va
     const r = await p.evaluate(() => ({ t: window.__t, say: document.querySelector('#jout').hidden ? '' : document.querySelector('#jsay').textContent, res: document.querySelector('#jres').textContent.slice(0, 200), vault: !document.querySelector('#v-vault').hidden, hasBtn: !!document.querySelector('#jres .jact, #jres textarea') }));
     const say = r.say, m = say.match(/^「(.+?)」[을를]? ?확대했습니다/); let got;
     if (r.t.sent.length) got = 'relay'; else if (r.vault) got = 'vault';
-    else if (r.t.sql.length) got = 'db:' + ((r.t.sql.join(' ').match(/kab_oem_state|dealers|jobs/) || ['?'])[0]);
+    else if (r.t.sql.length) got = 'db:' + ((r.t.sql.join(' ').match(/job_events|kab_job_packing|kab_slip_queue|kab_oem_state|dealers|jobs/) || ['?'])[0]);
     else if (r.t.mcp.length) got = 'mcp:' + r.t.mcp[0]; else if (r.t.ai) got = 'ai';
     else if (m) got = 'note:' + (T2I[m[1].trim()] || m[1]);
     else if (/관련 기록 \d+건/.test(say)) got = 'search'; else if (/찾지 못했습니다/.test(say)) got = 'miss'; else if (/가진 스킬|스킬/.test(r.res) && /skh|순서/.test(await p.innerHTML('#jres'))) got = 'skill'; else got = say ? 'answer' : 'nothing';
