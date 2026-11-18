@@ -85,6 +85,11 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 /* Jarvis console */
 .jarvis{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(52px + env(safe-area-inset-bottom, 0px));width:min(600px,calc(100% - var(--gl) - var(--gr)));display:flex;flex-direction:column;gap:8px}
 .jout{background:linear-gradient(var(--accent-hi),var(--accent-hi)) top left/18px 2px no-repeat,linear-gradient(var(--accent-hi),var(--accent-hi)) top left/2px 18px no-repeat,linear-gradient(var(--accent-hi),var(--accent-hi)) bottom right/18px 2px no-repeat,linear-gradient(var(--accent-hi),var(--accent-hi)) bottom right/2px 18px no-repeat,rgba(14,8,12,.9);backdrop-filter:blur(10px);border:1px solid rgba(255,79,163,.35);border-radius:3px;padding:12px 14px;max-height:min(36vh,330px);overflow-y:auto;box-shadow:0 0 40px rgba(255,79,163,.12)}
+#jout{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(640px,calc(100% - var(--gl) - var(--gr)));max-height:min(68vh,620px);z-index:20;padding:16px 18px;box-shadow:0 0 0 1px rgba(255,79,163,.25),0 0 70px rgba(255,79,163,.3),0 30px 80px rgba(0,0,0,.65)}
+#jout.pop{animation:jpop .24s cubic-bezier(.2,.9,.3,1.25)}
+@keyframes jpop{from{opacity:0;transform:translate(-50%,-50%) scale(.84)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+#jout .jsay{font-size:16.5px;line-height:1.6;margin:12px 0 4px}
+#jout .jhead button{font-size:13px;padding:6px 12px;border:1px solid rgba(255,79,163,.4);border-radius:8px;color:var(--fg)}
 .jhead{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;letter-spacing:.18em;color:var(--accent);text-shadow:0 0 10px rgba(255,79,163,.8)}
 .jhead button{margin-left:auto;color:var(--muted);font-family:var(--sans);letter-spacing:0;font-size:12px;padding:2px 6px}
 .jsay{margin:8px 0 2px;line-height:1.55;font-size:14.5px;min-height:1.5em}
@@ -192,7 +197,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
   .jarvis{bottom:calc(50px + env(safe-area-inset-bottom, 0px))}
 }
 @media (pointer:coarse){.jbtn{width:44px;height:44px}.zoom button{width:40px;height:40px}}
-@media (prefers-reduced-motion:reduce){.orb,.jbtn.rec,.jsay::after{animation:none}.side{transition:none}}
+@media (prefers-reduced-motion:reduce){#jout.pop{animation:none}.orb,.jbtn.rec,.jsay::after{animation:none}.side{transition:none}}
 </style>
 
 <div class="app" id="app">
@@ -240,12 +245,12 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
         </div>
         <div class="sample" id="sample" hidden>지금 보이는 건 예시 노트예요<button id="clear-sample">비우고 시작</button></div>
       </div>
+      <div class="jout" id="jout" hidden>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r27<button id="jclose">닫기</button></div>
+        <p class="jsay" id="jsay"></p>
+        <div class="jres" id="jres"></div>
+      </div>
       <div class="jarvis">
-        <div class="jout" id="jout" hidden>
-          <div class="jhead">J.A.R.V.I.S · 응답 · r26<button id="jclose">닫기</button></div>
-          <p class="jsay" id="jsay"></p>
-          <div class="jres" id="jres"></div>
-        </div>
         <div class="hints" id="hints">
           <button>내일 대리점 작업목록</button><button>오늘 브리핑해줘</button><button>메일 확인해줘</button><button>이번 달 일정 뭐 있지?</button><button>사내 재고 웹 만들려는데 어떤 스킬?</button><button>클로드 작업 뭐 돌아가고 있어?</button>
         </div>
@@ -539,7 +544,7 @@ function fit(ids) {
   const list = ids ? nodes.filter(n => ids.has(n.id)) : nodes; if (!list.length) return;
   let mx = 0, my = 0, mz = 0; if (ids) { list.forEach(n => { mx += n.x; my += n.y; mz += n.z; }); mx /= list.length; my /= list.length; mz /= list.length; }
   let rad = 0; list.forEach(n => rad = Math.max(rad, Math.hypot(n.x - mx, n.y - my, n.z - mz)));
-  const padB = $('#jout').hidden ? 120 : Math.min(H * .36, 330) + 130, availH = Math.max(120, H - hudTop - padB);
+  const padB = 120, availH = Math.max(120, H - hudTop - padB);
   camTo = { k: clamp(Math.min(W - 50, availH) / (2 * (rad + 60)), .3, 1.9), tx:mx, ty:my, tz:mz, oy:(hudTop - padB) / 2, rx: flat ? 1.5708 : (cam.rx > 1.2 ? .42 : cam.rx) };
 }
 function setFocus(ids) {
@@ -728,7 +733,7 @@ function speak(text) { if (!voiceOn) return; let vp = ''; try { vp = localStorag
   synth(text); }
 function synth(text) { if (!('speechSynthesis' in window)) return; try { const busyNow = speechSynthesis.speaking || speechSynthesis.pending; if (busyNow) speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/[「」“”#]/g, ' ')); u.lang = 'ko-KR'; u.rate = 1.02; u.pitch = 1.05; const vs = speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)); let pref = ''; try { pref = localStorage.getItem('sb-voice') || ''; } catch (x) {} const fv = vs.find(v => v.name === pref) || vs.find(v => /female|yuna|sora|heami|sun-?hi|seoyeon|여/i.test(v.name)) || vs[0]; if (fv) u.voice = fv; const go = () => { try { speechSynthesis.resume(); speechSynthesis.speak(u); } catch (e) {} }; busyNow ? setTimeout(go, 160) : go(); } catch (e) {} }
 function say(text, html, action, opt) {
-  const out = $('#jout'), p = $('#jsay'); out.hidden = false; $('#hints').hidden = true; $('#jres').innerHTML = html || '';
+  const out = $('#jout'), p = $('#jsay'); const wasHidden = out.hidden; out.hidden = false; out.scrollTop = 0; if (wasHidden && !reduce) { out.classList.remove('pop'); void out.offsetWidth; out.classList.add('pop'); } if (!(opt && opt.quiet)) { blip(1700, 1700, .055, .05); setTimeout(() => blip(2300, 2300, .085, .05), 85); } $('#hints').hidden = true; $('#jres').innerHTML = html || '';
   if (action) { const b = document.createElement('button'); b.className = 'jact'; b.textContent = action.label; b.onclick = action.run; $('#jres').append(b); }
   clearInterval(typeT); p.classList.remove('done'); p.textContent = ''; let i = 0; talking = !reduce;
   if (reduce) { p.textContent = text; p.classList.add('done'); } else typeT = setInterval(() => { p.textContent = text.slice(0, i += 2); if (i >= text.length) { clearInterval(typeT); p.classList.add('done'); talking = false; } }, 22);
@@ -1066,7 +1071,7 @@ function pick(id) { const n = byId(id); if (!n || !nodeById.get(id)) return; if 
   setFocus(new Set([id])); blip(900, 1500, .12, .04); }
 function ask(raw) {
   const q = raw.trim(); if (!q) return; show('graph'); $('#jq').value = '';
-  const bar = $('#jbar'); bar.classList.add('busy'); setTimeout(() => bar.classList.remove('busy'), 900); blip(620, 1240, .14); setTimeout(() => blip(1240, 1860, .2, .03), 160);
+  const bar = $('#jbar'); bar.classList.add('busy'); setTimeout(() => bar.classList.remove('busy'), 900);
   let m;
   if (/^(잠가|잠금|잠그기|다시 잠)/.test(q) && !/(풀어|해제|없애)/.test(q)) { relock(); say('중요 노트를 다시 잠갔습니다.'); return; }
   const topicNotes = t => { const tk = tokens(t).map(x => x.replace('#', '')); return tk.length ? db.notes.filter(n => tk.some(k => n.title.toLowerCase().includes(k) || n.tags.some(g => g.toLowerCase().includes(k)))) : []; };
