@@ -314,7 +314,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       </div>
       <div class="clus" id="clus"></div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r48<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r49<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -1091,7 +1091,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r48'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r49'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1327,6 +1327,14 @@ function ask(raw) {
   let m;
   if (/^(잠가|잠금|잠그기|다시 잠)/.test(q) && !/(풀어|해제|없애)/.test(q)) { relock(); say('중요 노트를 다시 잠갔습니다.'); return; }
   const topicNotes = t => { const tk = tokens(t).map(x => x.replace('#', '')); return tk.length ? db.notes.filter(n => tk.some(k => n.title.toLowerCase().includes(k) || n.tags.some(g => g.toLowerCase().includes(k)))) : []; };
+  if (/(잠가|잠궈|잠금|잠그|비밀번호)/.test(q)) { // lock or unlock a whole topic group ("기타 잠가줘") or what is on screen ("검색한 거 잠가줘")
+    const off = /(풀어|해제|없애)/.test(q), norm = x => x.replace(/[\s·\d]/g, '').toLowerCase(), rest = norm(q.replace(/(잠가|잠궈|잠금해|잠금|잠그기|잠그|비밀번호|걸어|설정|풀어|해제|없애|해줘|해 줘|줘|주세요|묶음|그룹|분류|전체|전부|모두|싹|노트|자료|을|를|은|는|좀)/g, ' ').replace(/(^|\s)다(\s|$)/g, ' '));
+    const cat = rest && CATS.map(c => c[0]).find(c => norm(c) === rest || c.split(' · ').some(w => norm(w) === rest));
+    const shown = /(검색|찾은|방금|지금 ?(보이는|나온|뜬)|이 ?결과|이거|이것|이 ?노트|선택한|화면)/.test(q) && focus ? [...focus.ids].map(byId).filter(Boolean) : null;
+    const list = cat ? db.notes.filter(n => catOf(n) === cat) : shown, label = cat ? `「${cat}」 묶음` : shown ? '지금 화면에 찾아 둔' : '';
+    if (list) { const tgt = list.filter(n => !!n.locked === off); if (!tgt.length) { say(off ? `${label} 노트 중 잠긴 것이 없습니다.` : list.length ? `${label} 노트 ${list.length}개는 이미 잠겨 있습니다.` : `${label} 노트가 없습니다.`); return; }
+      const go = () => { tgt.forEach(n => { n.locked = !off; }); save(); refresh(); say(off ? `${label} 노트 ${tgt.length}개의 잠금을 풀었습니다.` : `${label} 노트 ${tgt.length}개를 잠갔습니다. 열 때 비밀번호를 묻습니다.`, `<div class="jcard"><p>${esc(tgt.slice(0, 12).map(n => n.title).join(' · '))}${tgt.length > 12 ? ' 외 ' + (tgt.length - 12) + '개' : ''}</p><p class="jmeta">${off ? '다시 잠그려면' : '되돌리려면'} “${esc(cat || '검색한 거')} ${off ? '잠가줘' : '잠금 풀어줘'}”라고 하세요.</p></div>`); setFocus(new Set(tgt.map(n => n.id)), cat || undefined); };
+      if (off) { if (!unlocked && db.pw) lockDialog('unlock', go); else go(); } else if (!db.pw) lockDialog('set', go); else go(); return; } }
   if ((m = q.match(/^(.*?)(?:에\s*(?:대한|관한|대해서?)|\s*관련(?:된)?)?\s*(?:거|것|건|노트|자료|내용)?(?:는|은|을|를)?\s*(?:잠금|비밀번호)(?:을|를)?\s*(?:다\s*|전부\s*|모두\s*)?(?:풀어|해제|없애)/))) { // bulk unlock
     const topic = m[1].replace(/(다|전부|모두|싹)\s*$/, '').trim(), list = (topic ? topicNotes(topic) : db.notes).filter(n => n.locked);
     if (!list.length) { say(topic ? `“${topic}” 쪽에는 잠긴 노트가 없습니다.` : '잠긴 노트가 없습니다.'); return; }
