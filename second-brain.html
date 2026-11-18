@@ -165,6 +165,18 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 #vsel{position:sticky;top:0;z-index:2;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;margin-bottom:10px;border:1px solid var(--accent);border-radius:10px;background:var(--panel2)}
 .vitem i.ck{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--muted)}
 .vitem i.ck.on{background:var(--accent);border-color:var(--accent);box-shadow:inset 0 0 0 3px var(--panel2)}
+.vcats{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px}
+.vcats button{font-size:12.5px;padding:7px 11px;min-height:34px;border-radius:99px;border:1px solid var(--line);background:var(--panel);color:var(--fg)}
+.vcats button:hover{border-color:var(--accent)}.vcats b{color:var(--accent-hi);font-weight:600;margin-left:2px}
+.vsum{font-size:12.5px;color:var(--muted);margin-right:4px}
+.vgroups{display:grid;gap:10px}
+.vgroup{border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}
+.vgroup summary{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center;padding:13px 14px;cursor:pointer;list-style:none}
+.vgroup summary::-webkit-details-marker{display:none}
+.vgroup summary b{font-size:15px}.vgroup summary span{font-family:var(--mono);font-size:12px;color:var(--accent-hi)}
+.vgroup summary small{grid-column:1/-1;color:var(--muted);font-size:12.5px}
+.vgroup[open] summary{border-bottom:1px solid var(--line)}
+.vgroup .vlist{border:0;border-radius:0}
 .empty{padding:40px 16px;text-align:center;color:var(--muted);background:var(--panel)}
 
 /* Editor drawer */
@@ -257,7 +269,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
         <div class="sample" id="sample" hidden>지금 보이는 건 예시 노트예요<button id="clear-sample">비우고 시작</button></div>
       </div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r37<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r38<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -285,6 +297,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       <div class="vhead"><h1>보관함</h1><input id="vq" placeholder="제목·내용·태그로 거르기" aria-label="보관함 거르기"><button class="btn ghost" id="v-lock">잠글 노트 고르기</button><button class="btn" id="v-new">새 노트</button></div>
       <div id="vsel" hidden><b>잠글 노트를 고르세요</b><span class="hint" id="vsel-n"></span><button class="btn" id="vsel-ok" style="margin-left:auto">선택한 노트만 잠그기</button><button class="btn ghost" id="vsel-no">취소</button></div>
       <div class="vfilter" id="vfilter" hidden></div>
+      <div class="vcats" id="vcats"></div>
       <div class="vlist" id="vlist"></div>
     </section>
   </main>
@@ -597,6 +610,22 @@ $('#m3d').onclick = () => setMode(false); $('#mflat').onclick = () => setMode(tr
 
 /* ---------- sidebar & vault ---------- */
 let vf = { folder:null, tag:null }, selMode = false, selSet = new Set();
+const hasTag = (n, ...t) => n.tags.some(x => t.includes(x));
+const CATS = [ // first match wins; notes the user wrote come first
+  ['내 메모', n => !/^(pk|d-|sk-|mem-|guide-|day-)/.test(n.id)],
+  ['자비스', n => /^(guide-|mem-|day-)/.test(n.id) || hasTag(n, '자비스', '브리핑', '세컨드브레인')],
+  ['스킬', n => hasTag(n, '스킬')],
+  ['AI 운영체제 대시보드', n => hasTag(n, '대시보드', 'AI운영체제') || /대시보드/.test(n.title)],
+  ['통합웹 · 사내망', n => hasTag(n, '웹앱', '사내망', '보안') || /통합웹|사내망/.test(n.title)],
+  ['유튜브', n => hasTag(n, '유튜브') || /유튜브|숏츠|쇼츠/.test(n.title)],
+  ['출하 · 대리점', n => hasTag(n, '출하', '대리점', '거래처')],
+  ['타타대우 · 성적서', n => hasTag(n, '타타대우', '성적서', '검사')],
+  ['판매 · 단가', n => hasTag(n, '판매') || /단가|판매/.test(n.title)],
+  ['슬랙 · 메일 · 드라이브', n => hasTag(n, '슬랙', '드라이브', '메일', '연동', '일정', '회의')],
+  ['Claude 작업 · 결정', n => hasTag(n, '클로드', '설정', '결정', '할일')],
+  ['기타', () => true]];
+const CATD = { '내 메모': '직접 적은 메모', '자비스': '사용 설명서, 기억, 오늘 날씨와 뉴스', '스킬': '가진 스킬 목록과 설명, 작업별 사용 기록', 'AI 운영체제 대시보드': '대시보드를 만든 과정과 결정', '통합웹 · 사내망': '웹앱 기능, 고친 것, 규칙', '유튜브': '채널 준비와 업로드 일정', '출하 · 대리점': '출하 기록, 대리점 자료, 거래처', '타타대우 · 성적서': '납품카드, 검사기준서, 성적서 폴더', '판매 · 단가': '판매현황, 판매계획, 단가표', '슬랙 · 메일 · 드라이브': '채널 정리, 폴더 지도, 일정', 'Claude 작업 · 결정': 'Claude와 일한 기록과 정해 둔 규칙', '기타': '그 밖의 노트' };
+const catOf = n => CATS.find(c => c[1](n))[0], vOpen = new Set(['내 메모']);
 function renderSide() {
   $('#folders').innerHTML = Object.entries(FOLD).map(([k, f]) => `<button class="fold" data-folder="${k}"><i style="background:${f.color}"></i><span>${f.name}</span><span>${db.notes.filter(n => n.folder === k).length}</span></button>`).join('');
   const tc = {}; db.notes.forEach(n => n.tags.forEach(t => tc[t] = (tc[t] || 0) + 1));
@@ -611,9 +640,14 @@ function renderVault() {
   $('#vsel').hidden = !selMode; $('#vsel-n').textContent = selSet.size + '개 선택됨';
   const f = $('#vfilter'); f.hidden = !(vf.folder || vf.tag);
   f.innerHTML = `${vf.folder ? esc(FOLD[vf.folder].name) + ' 폴더' : '#' + esc(vf.tag || '')}만 보는 중 · ${list.length}개 <button id="vclear">전체 보기</button>`;
-  $('#vlist').innerHTML = list.map(n => { const d = new Date(n.updated);
-    return `<button class="vitem" ${selMode ? 'data-sel' : 'data-id'}="${n.id}">${selMode ? `<i class="ck${selSet.has(n.id) ? ' on' : ''}"></i>` : `<i style="background:${FOLD[n.folder].color}"></i>`}<b>${n.locked ? LOCK : ''}${esc(n.title || '제목 없음')}</b><time>${d.getMonth()+1}.${String(d.getDate()).padStart(2, '0')}</time><small>${esc(n.tags.map(t => '#'+t).join(' '))} ${isLocked(n) ? '잠긴 노트' : esc(n.body.replace(/\[\[|\]\]/g, '').slice(0, 90))}</small></button>`; }).join('')
-    || `<div class="empty">${db.notes.length ? '조건에 맞는 노트가 없습니다.' : '아직 노트가 없습니다. “새 노트”로 첫 기록을 남겨 보세요.'}</div>`;
+  const itemHtml = n => { const d = new Date(n.updated); return `<button class="vitem" ${selMode ? 'data-sel' : 'data-id'}="${n.id}">${selMode ? `<i class="ck${selSet.has(n.id) ? ' on' : ''}"></i>` : `<i style="background:${FOLD[n.folder].color}"></i>`}<b>${n.locked ? LOCK : ''}${esc(n.title || '제목 없음')}</b><time>${d.getMonth()+1}.${String(d.getDate()).padStart(2, '0')}</time><small>${esc(n.tags.map(t => '#'+t).join(' '))} ${isLocked(n) ? '잠긴 노트' : esc(n.body.replace(/\[\[|\]\]/g, '').slice(0, 90))}</small></button>`; };
+  const empty = `<div class="empty">${db.notes.length ? '조건에 맞는 노트가 없습니다.' : '아직 노트가 없습니다. “새 노트”로 첫 기록을 남겨 보세요.'}</div>`;
+  if (!list.length) { $('#vcats').innerHTML = ''; $('#vlist').className = 'vlist'; $('#vlist').innerHTML = empty; return; }
+  const groups = new Map(CATS.map(c => [c[0], []])); list.forEach(n => groups.get(catOf(n)).push(n));
+  const used = [...groups].filter(([, v]) => v.length), narrowed = !!(q || vf.folder || vf.tag || selMode);
+  $('#vcats').innerHTML = `<span class="vsum">전체 ${list.length}개</span>` + used.map(([k, v]) => `<button data-cat="${esc(k)}">${esc(k)} <b>${v.length}</b></button>`).join('');
+  $('#vlist').className = 'vgroups';
+  $('#vlist').innerHTML = used.map(([k, v]) => `<details class="vgroup" data-cat="${esc(k)}"${narrowed || vOpen.has(k) ? ' open' : ''}><summary><b>${esc(k)}</b><span>${v.length}개</span><small>${esc(CATD[k] || '')}</small></summary><div class="vlist">${v.map(itemHtml).join('')}</div></details>`).join('');
 }
 function show(view) {
   $('#v-graph').hidden = view !== 'graph'; $('#v-vault').hidden = view !== 'vault';
@@ -630,6 +664,7 @@ document.addEventListener('click', e => {
   else if (b.dataset.sel) { selSet.has(b.dataset.sel) ? selSet.delete(b.dataset.sel) : selSet.add(b.dataset.sel); renderVault(); }
   else if (b.dataset.dcopy) { try { navigator.clipboard.writeText(diagText).then(() => toast('복사했습니다.'), () => toast('복사하지 못했습니다. 화면을 캡처해 주세요.')); } catch (e) { toast('복사하지 못했습니다. 화면을 캡처해 주세요.'); } }
   else if (b.dataset.relay) { if (relayLast) relay(relayLast); }
+  else if (b.dataset.cat) { const g = [...document.querySelectorAll('.vgroup')].find(x => x.dataset.cat === b.dataset.cat); if (g) { g.open = true; vOpen.add(b.dataset.cat); g.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' }); } }
   else if (b.dataset.ask) { $('#tasks').classList.remove('open'); ask(b.dataset.ask); }
   else if (b.dataset.task) { const t = tasks.find(x => x.id === b.dataset.task); if (t) { $('#tasks').classList.remove('open'); showTask(t); } }
   else if (b.dataset.web) { let hm = ''; try { hm = localStorage.getItem('sb-region') || ''; } catch (e) {} webAsk('지금 ' + (/(날씨|기온)/.test(b.dataset.web) && hm && !b.dataset.web.includes(hm) ? hm + ' ' : '') + b.dataset.web + ' 검색해서 알려줘'); }
@@ -977,7 +1012,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r37'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r38'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1218,6 +1253,7 @@ function ask(raw) {
   if ((m = q.match(/^(?:내|우리|날씨)\s*(?:지역|동네)\s*(?:은|는|을|를)?\s*(.+?)\s*(?:이야|야|으로|로)?\s*(?:설정|저장|기억)?\s*(?:해 ?줘|해 ?둬|해)?$/)) && m[1].length <= 14) { const rg = m[1].trim(); try { localStorage.setItem('sb-region', rg); } catch (e) {}
     let mn = byId('mem-01'); if (mn && !isLocked(mn)) { mn.body = mn.body.replace(/\n· 날씨는 .* 기준으로 알려준다\./, '') + `\n· 날씨는 ${rg} 기준으로 알려준다.`; mn.updated = Date.now(); mn.rev = 99; save(); }
     say(`날씨 지역을 ${rg}(으)로 정했습니다. 이제 “날씨 알려줘”라고 하면 ${rg} 날씨를 찾아옵니다.`, '<div class="jrow"><button class="jact" data-web="날씨">지금 날씨 보기</button></div>'); return; }
+  if (/(노트|메모|자료|데이터).*(전체|전부|다|모두|정리).*(보여|봐|열어|볼래|보기)|^(보관함|전체 ?목록|노트 ?목록)/.test(q)) { vf = { folder:null, tag:null }; $('#jout').hidden = true; show('vault'); toast('주제별로 묶어 두었습니다. 묶음을 누르면 펼쳐집니다.'); return; }
   if (/^(도움말|사용법|설명서|뭐 ?할 ?수 ?있|할 ?수 ?있는 ?(거|것|게)|어떻게 ?써|뭘 ?할 ?수)/.test(q) && byId('guide-01')) { pick('guide-01'); return; }
   if (/(자비스).*(어떻게 ?만들|만든 ?과정|만들면서|무슨 ?스킬|어떤 ?스킬)/.test(q) && byId('guide-02')) { pick('guide-02'); return; }
   if (/^(진단|점검|연결 ?상태|연결 ?확인|왜 ?안 ?돼|안 ?돼|안 ?됨)/.test(q)) { diagnose(); return; }
