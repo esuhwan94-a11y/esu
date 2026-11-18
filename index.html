@@ -322,7 +322,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       </div>
       <div class="clus" id="clus"></div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r46<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r47<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -946,6 +946,49 @@ async function shipCheck(q) { setFocus(null);
     say(`${label} 건은 ${rows.length}건입니다. ${Object.entries(cnt).map(([k, v]) => `${k} ${v}건`).join(', ')}. 업체는 ${names.slice(0, 6).join(', ')}${names.length > 6 ? ' 외 ' + (names.length - 6) + '곳' : ''}입니다.${extra}`,
       rows.map(row).join(''), null, { speech: `${label} 업체는 ${names.map(x => String(x).replace(/㈜|\(주\)|주식회사/g, '').trim()).join(', ')}.` });
   } catch (e) { connErr(e, SB); } }
+/* the rest of the shipping web app: event history, packing, slip queue, and everything about one company (all read-only) */
+const KW_DROP = /(출고|출하|이력|기록|누가|언제|처리|파레트|팔레트|박스|포장|패킹|전표|대기|현황|몇|알려|보여|뭐|어디|확인|오늘|어제|내일|이번|최근|목록|리스트|해줘|말해|있|했|됐|좀|관련|전부|전체|정보|대해|나갔|보냈|준비|배차|작업|대리점|^개$|^수$|^다$|^건$|^거$|^것$)/;
+const cleanKw = q => tokens(q).filter(t => !KW_DROP.test(t)).map(t => t.replace(/[^0-9a-zA-Z가-힣()㈜]/g, '')).filter(t => t.length >= 2);
+const coShort = x => String(x || '').replace(/㈜|\(주\)|\(유\)|주식회사/g, '').trim();
+const KDAY = "date_trunc('day', now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul'";
+async function histCheck(q) { setFocus(null); const kw = cleanKw(q), w = [];
+  if (kw.length) w.push('(' + kw.map(k => `company_snapshot ilike '%${k}%'`).join(' or ') + ')');
+  let label = kw.length ? `“${kw.join(' ')}” ` : '최근 '; if (/어제/.test(q)) { w.push(`created_at >= ${KDAY} - interval '1 day' and created_at < ${KDAY}`); label += '어제 '; } else if (/오늘/.test(q)) { w.push(`created_at >= ${KDAY}`); label += '오늘 '; }
+  setBusy(true); say('출고 이력을 확인하고 있습니다.', '', null, { quiet: true });
+  try { const rows = await sql(`select company_snapshot as company, label, actor_name, pallets, created_at from public.job_events ${w.length ? 'where ' + w.join(' and ') : ''} order by created_at desc limit 40`); setBusy(false);
+    if (!rows.length) { say(`${label}출고 이력이 없습니다. 통합웹 이력은 정상으로 읽었습니다.`); return; }
+    const r0 = rows[0]; say(`${label}출고 이력은 ${rows.length}건입니다. 가장 최근은 ${pgDate(r0.created_at)} ${r0.company}, ${r0.label}${r0.actor_name ? ', 처리한 사람은 ' + r0.actor_name : ''}입니다.`,
+      rows.map(r => `<div class="sk"><b>${esc(r.company || '')} <small>${esc(r.label || '')}${r.pallets ? ' · ' + r.pallets + 'P' : ''}</small></b><small>${pgDate(r.created_at)}${r.actor_name ? ' · ' + esc(r.actor_name) : ''}</small></div>`).join(''), null, { speech: `${label}출고 이력 ${rows.length}건입니다. 최근은 ${coShort(r0.company)}, ${r0.label}입니다.` });
+  } catch (e) { connErr(e, SB); } }
+async function packCheck(q) { setFocus(null); const kw = cleanKw(q), sel = 'select j.company, p.pallet_count, p.box_count, p.updated_at, j.ready_at, j.shipped_at from public.kab_job_packing p join public.jobs j on j.id = p.job_id';
+  setBusy(true); say('포장 기록을 확인하고 있습니다.', '', null, { quiet: true });
+  try { let rows = await sql(`${sel} where ${kw.length ? kw.map(k => `j.company ilike '%${k}%'`).join(' or ') : 'j.shipped_at is null'} order by p.updated_at desc limit 40`), label = kw.length ? `“${kw.join(' ')}” 포장 기록` : '아직 안 나간 작업의 포장 기록';
+    if (!rows.length) { rows = await sql(`${sel} order by p.updated_at desc limit 15`); label = (kw.length ? `“${kw.join(' ')}”로는 없어서 ` : '안 나간 작업에는 없어서 ') + '최근 포장 기록'; }
+    setBusy(false); if (!rows.length) { say('통합웹에 포장 기록이 없습니다.'); return; }
+    say(`${label}은 ${rows.length}건입니다. ` + rows.slice(0, 4).map(r => `${r.company} 파레트 ${r.pallet_count ?? 0}개, 박스 ${r.box_count ?? 0}개`).join('. ') + '.',
+      rows.map(r => `<div class="sk"><b>${esc(r.company)} <small>파레트 ${r.pallet_count ?? 0} · 박스 ${r.box_count ?? 0}</small></b><small>${jobState(r)} · 입력 ${pgDate(r.updated_at)}</small></div>`).join(''), null, { speech: rows.slice(0, 5).map(r => `${coShort(r.company)} 파레트 ${r.pallet_count ?? 0}개, 박스 ${r.box_count ?? 0}개`).join('. ') + '.' });
+  } catch (e) { connErr(e, SB); } }
+async function slipCheck(q) { setFocus(null); const kw = cleanKw(q);
+  setBusy(true); say('출고전표 목록을 확인하고 있습니다.', '', null, { quiet: true });
+  try { const rows = await sql(`select company, pack_no, pack_kind, total_qty, earliest_due, status, slip_date, created_at from public.kab_slip_queue where cancelled_at is null${kw.length ? ' and (' + kw.map(k => `company ilike '%${k}%'`).join(' or ') + ')' : ''} order by created_at desc limit 40`); setBusy(false);
+    if (!rows.length) { say('통합웹 출고전표 목록에 남아 있는 건이 없습니다.'); return; }
+    const cnt = {}; rows.forEach(r => { cnt[r.status || '상태 없음'] = (cnt[r.status || '상태 없음'] || 0) + 1; });
+    say(`출고전표 목록은 ${rows.length}건입니다. ${Object.entries(cnt).map(([k, v]) => `${k} ${v}건`).join(', ')}.`, rows.map(r => `<div class="sk"><b>${esc(r.company || '')} <small>${esc(r.status || '')}${r.pack_no ? ' · ' + esc(String(r.pack_no)) : ''}</small></b><small>수량 ${r.total_qty ?? ''}${r.earliest_due ? ' · 납기 ' + esc(String(r.earliest_due)) : ''}${r.slip_date ? ' · 전표일 ' + esc(String(r.slip_date)) : ''} · 등록 ${pgDate(r.created_at)}</small></div>`).join(''));
+  } catch (e) { connErr(e, SB); } }
+let coNames = null; try { const c = JSON.parse(localStorage.getItem('sb-co') || 'null'); if (c && Date.now() - c.at < 864e5 && Array.isArray(c.names)) coNames = c.names; } catch (e) {}
+async function companyTry(q) { if (!mcp) return false; const kw = cleanKw(q); if (!kw.length) return false;
+  try { if (!coNames) { coNames = (await sql('select name from public.dealers union select distinct company as name from public.jobs limit 300')).map(r => String(r.name || '')).filter(Boolean); try { localStorage.setItem('sb-co', JSON.stringify({ at: Date.now(), names: coNames })); } catch (e) {} }
+    const hit = kw.filter(k => coNames.some(n => coShort(n).includes(k))); if (!hit.length) return false; companyAll(hit); return true; } catch (e) { return false; } }
+async function companyAll(kw) { setFocus(null); const like = col => '(' + kw.map(k => `${col} ilike '%${k}%'`).join(' or ') + ')'; setBusy(true); say(`“${kw.join(' ')}”에 대해 통합웹 전체를 확인하고 있습니다.`, '', null, { quiet: true });
+  try { const [dl, jb, ev, tt] = await Promise.all([sql(`select name, address, default_shipping, depot from public.dealers where ${like('name')} limit 3`), sql(`select company, note, pallets, shipping_mode, created_at, ready_at, dispatched_at, shipped_at from public.jobs where ${like('company')} order by created_at desc limit 8`),
+      sql(`select company_snapshot as company, label, actor_name, created_at from public.job_events where ${like('company_snapshot')} order by created_at desc limit 6`), sql(`${TATA_ITEMS} select count(*) as cards, coalesce(sum((i->>'remaining')::int), 0) as remaining from it where ${like("i->>'company'")} and (i->>'remaining')::int > 0`).catch(() => [])]);
+    setBusy(false); const open = jb.filter(j => !j.shipped_at), name = (dl[0] && dl[0].name) || (jb[0] && jb[0].company) || kw.join(' '), tc = tt[0] && +tt[0].cards;
+    if (!dl.length && !jb.length && !ev.length && !tc) { say(`통합웹에서 “${kw.join(' ')}” 관련 자료를 찾지 못했습니다.`, relayBtn(kw.join(' '))); return; }
+    const parts = [dl[0] ? `주소는 ${dl[0].address || '등록 안 됨'}${dl[0].default_shipping ? ', 기본 배송은 ' + dl[0].default_shipping : ''}` : '주소록에는 없습니다', open.length ? `안 나간 작업 ${open.length}건(${open.map(jobState).join(', ')})` : '안 나간 작업은 없습니다', ev[0] ? `최근 이력은 ${pgDate(ev[0].created_at)} ${ev[0].label}` : '', tc ? `타타대우 납품카드 남은 것 ${tc}건, 수량 ${tt[0].remaining}개` : ''].filter(Boolean);
+    say(`${name}: ${parts.join('. ')}.`, (dl.length ? '<div class="skh">주소록</div>' + dl.map(r => `<div class="sk"><b>${esc(r.name)}${r.default_shipping ? ` <small>${esc(r.default_shipping)}</small>` : ''}</b><small>${esc(r.address || '주소 없음')}${r.depot ? '<br>영업소: ' + esc(r.depot) : ''}</small></div>`).join('') : '')
+      + (jb.length ? `<div class="skh">작업 · 최근 ${jb.length}건</div>` + jb.map(j => `<div class="sk"><b>${esc(j.company)} <small>${jobState(j)}${j.shipping_mode ? ' · ' + esc(j.shipping_mode) : ''}${j.pallets ? ' · ' + j.pallets + 'P' : ''}</small></b><small>${esc(String(j.note || '').slice(0, 160))}<br>등록 ${pgDate(j.created_at)}${j.shipped_at ? ' · 출고 ' + pgDate(j.shipped_at) : ''}</small></div>`).join('') : '')
+      + (ev.length ? '<div class="skh">최근 이력</div>' + ev.map(r => `<div class="sk"><b>${esc(r.label || '')}</b><small>${pgDate(r.created_at)}${r.actor_name ? ' · ' + esc(r.actor_name) : ''}</small></div>`).join('') : ''), null, { speech: `${coShort(name)}. ${parts.join('. ')}.` });
+  } catch (e) { connErr(e, SB); } }
 /* 타타대우 납품카드(통합웹 kab_oem_state.payload.items): 납기별 현황과 상세 */
 const TATA_ITEMS = "with it as (select jsonb_array_elements(payload->'items') i from public.kab_oem_state where id='tata')";
 const dueStr = (y, m, d) => `${y}.${pad2(m)}.${pad2(d)}`;
@@ -1056,7 +1099,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r46'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r47'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1310,10 +1353,25 @@ function ask(raw) {
     let mn = byId('mem-01'); if (mn && !isLocked(mn)) { mn.body = mn.body.replace(/\n· 날씨는 .* 기준으로 알려준다\./, '') + `\n· 날씨는 ${rg} 기준으로 알려준다.`; mn.updated = Date.now(); mn.rev = 99; save(); }
     say(`날씨 지역을 ${rg}(으)로 정했습니다. 이제 “날씨 알려줘”라고 하면 ${rg} 날씨를 찾아옵니다.`, '<div class="jrow"><button class="jact" data-web="날씨">지금 날씨 보기</button></div>'); return; }
   if (/(노트|메모|자료|데이터).*(전체|전부|다|모두|정리).*(보여|봐|열어|볼래|보기)|^(보관함|전체 ?목록|노트 ?목록)/.test(q)) { vf = { folder:null, tag:null }; $('#jout').hidden = true; show('vault'); toast('주제별로 묶어 두었습니다. 묶음을 누르면 펼쳐집니다.'); return; }
-  if (/^(도움말|사용법|설명서|뭐 ?할 ?수 ?있|할 ?수 ?있는 ?(거|것|게)|어떻게 ?써|뭘 ?할 ?수)/.test(q) && byId('guide-01')) { pick('guide-01'); return; }
+  /* small talk and facts the page already knows: answer at once, no search */
+  if (/^(안녕|하이|헬로|hello|hi|좋은 ?(아침|저녁|오후))[\s!~.?]*(하세요|자비스)?[\s!~.?]*$/i.test(q)) { say('안녕하세요. 뭐 알려드릴까요? 출고준비 목록, 메일, 일정, 날씨를 바로 볼 수 있습니다.'); return; }
+  if (/^(고마워|고맙|감사|땡큐|수고|잘했어|굿)/.test(q) && q.length <= 12) { say('네, 더 필요한 게 있으면 말씀해 주세요.'); return; }
+  if (/(너|넌|자비스).{0,4}(누구|뭐야|뭐니|정체)|^누구(야|세요)/.test(q) && q.length <= 16) { say(`저는 자비스입니다. 노트 ${db.notes.length}개와 통합웹, 메일, 일정, 슬랙, 드라이브를 보고 답하는 개인 비서입니다. “뭐 할 수 있어?”라고 하면 할 수 있는 일을 보여드립니다.`); return; }
+  if (/(지금|현재)? ?몇 ?시/.test(q) && q.length <= 14) { const d = new Date(); say(`지금은 ${d.getHours() < 12 ? '오전' : '오후'} ${d.getHours() % 12 || 12}시 ${d.getMinutes()}분입니다.`); return; }
+  if (/(오늘|지금).{0,3}(며칠|몇 ?월|무슨 ?요일|날짜)|^(며칠|무슨 ?요일)/.test(q) && q.length <= 16) { const d = new Date(); say(`오늘은 ${d.getMonth() + 1}월 ${d.getDate()}일 ${'일월화수목금토'[d.getDay()]}요일입니다.`); return; }
+  if (/(노트|메모|자료|기록).{0,6}(몇 ?개|개수|얼마나 ?(있|쌓))/.test(q)) { const c = k => db.notes.filter(n => n.folder === k).length; say(`노트는 모두 ${db.notes.length}개입니다. 자료 ${c('res')}개, 아이디어 ${c('idea')}개, 업무 기록 ${c('work')}개이고, 잠근 노트는 ${db.notes.filter(n => n.locked).length}개입니다.`, '<div class="jrow"><button class="jact ghost" data-view="vault">보관함에서 묶음별로 보기</button></div>'); return; }
+  if (/스킬.{0,6}(몇 ?개|개수|얼마나)/.test(q)) { say(`대시보드 기준으로 가진 스킬은 ${allSkills().length}개입니다. Claude 계정에 켜져 있는 스킬은 따로 정리해 두었습니다.`, ['cl-skills-on', 'sk-rank', 'sk-used'].map(byId).filter(Boolean).map(n => `<button data-pick="${n.id}"><i style="background:${FOLD[n.folder].color}"></i><b>${esc(n.title)}</b><small>${esc(n.body.slice(0, 80))}</small></button>`).join('')); return; }
+  if (/(가장|제일|많이|자주).{0,8}(쓴|쓰는|사용한|사용하는|썼).{0,4}스킬|스킬.{0,8}(사용 ?횟수|순위|랭킹|많이 ?(쓴|썼))/.test(q) && byId('sk-rank')) { const n = byId('sk-rank'), top = (n.body.match(/^\d\. .+$/gm) || []).slice(0, 3).map(x => x.replace(/^\d\. /, '').replace(/ \(.*$/, '')); say(top.length ? `가장 많이 쓴 스킬은 ${top.join(', ')} 순서입니다. 작업 대화 기록에서 실제로 불러온 횟수를 센 결과입니다.` : `「${n.title}」 노트에 정리해 두었습니다.`, `<div class="jcard"><p>${esc(n.body)}</p></div>`); setFocus(new Set([n.id])); return; }
+  if (/(작업별|작업마다).{0,8}스킬|(무슨|어떤|뭔) ?스킬.{0,4}(썼|쓴|사용했)|스킬 ?(뭐|뭘) ?썼/.test(q) && byId('sk-used')) { pick('sk-used'); return; }
+  { const sk = /(뭐야|뭔데|뭐하는|뭐 ?하는|뭐지|설명|어떤 ?스킬|무슨 ?스킬)/.test(q) && allSkills().find(k => k.name.length >= 3 && q.toLowerCase().replace(/[-\s]/g, '').includes(k.name.toLowerCase().replace(/[-\s]/g, ''))); if (sk) { say(`${sk.name}은 ${sk.desc || '설명이 등록되지 않은 스킬'}입니다.${sk.group ? ' 분류는 ' + sk.group + '입니다.' : ''}`); return; } }
+  if (/^(출고|출하)$/.test(q)) { shipCheck('출고준비 목록'); return; }
+  if (/^(일정|스케줄|캘린더)$/.test(q)) { ask('이번 주 일정 알려줘'); return; }
+  if (/^(메일|이메일)$/.test(q)) { ask('메일 확인해줘'); return; }
+  if (/^(슬랙)$/.test(q)) { ask('슬랙 새 글 있어?'); return; }
+  if (/^(도움말|사용법|설명서|뭐 ?할 ?수 ?있|할 ?수 ?있는 ?(거|것|게)|어떻게 ?써|뭘 ?할 ?수)|(자비스|너|넌).{0,6}(사용법|쓰는 ?법|쓰는 ?방법|뭐 ?할 ?줄|뭘 ?할 ?줄|할 ?줄 ?아는|기능)|(사용법|쓰는 ?법|기능).{0,4}(알려|보여|뭐)/.test(q) && byId('guide-01')) { pick('guide-01'); return; }
   if (/(자비스).*(어떻게 ?만들|만든 ?과정|만들면서|무슨 ?스킬|어떤 ?스킬)/.test(q) && byId('guide-02')) { pick('guide-02'); return; }
-  if (/(예약 ?작업|자동 ?작업|정기 ?작업|스케줄|정기 ?점검).*(뭐|목록|알려|보여|있|돌았|됐|상태)|^(예약|자동) ?작업$/.test(q) && byId('cl-tasks')) { pick('cl-tasks'); return; }
-  if (/(클로드|claude).*(대화|세션|작업).*(목록|뭐 ?했|뭐 ?있|보여|알려)/i.test(q) && byId('cl-sessions')) { pick('cl-sessions'); return; }
+  if (/(예약 ?작업|자동 ?작업|정기 ?작업|정기 ?점검|자동으로 ?(도는|돌아가는|하는) ?(작업|것|거)).*(뭐|목록|알려|보여|있|돌았|됐|상태)|^(예약|자동) ?작업$|(점검|보고|정리|조회).{0,6}(돌았|돌아갔|실행됐|됐어)/.test(q) && !/(일정|캘린더|메일 ?확인)/.test(q) && byId('cl-tasks')) { pick('cl-tasks'); return; }
+  if (/(클로드|claude).*(대화|세션|작업).*(목록|뭐 ?했|뭐 ?있|보여|알려)|(클로드|claude)(로|에서|랑|하고)?.{0,6}(뭐|뭘|무슨).{0,6}(작업|했|만들)/i.test(q) && !/(시켜|지시|전해|보내)/.test(q) && byId('cl-sessions')) { pick('cl-sessions'); return; }
   if (/(아티팩트|만든 ?(페이지|화면|시안)|올린 ?페이지).*(목록|뭐|보여|알려|있)/.test(q) && byId('cl-artifacts')) { pick('cl-artifacts'); return; }
   if (/(커넥터|연결된 ?(서비스|것|폴더)|뭐 ?연결|연동 ?(상태|목록))/.test(q) && byId('cl-connectors')) { pick('cl-connectors'); return; }
   if (/(켜진|켜져 ?있는|계정).*스킬/.test(q) && byId('cl-skills-on')) { pick('cl-skills-on'); return; }
@@ -1328,11 +1386,12 @@ function ask(raw) {
   if (/(클로드|claude)/i.test(q) && /(작업|세션|대화)/.test(q) && /(뭐|목록|돌아가|진행|상태|보여|알려|확인|있어)/.test(q) && !/(노트|메모|잠가|스킬)/.test(q)) { claudeList(); return; }
   if ((m = q.match(/^(?:클로드|claude)\s*(?:한테|에게|에)\s*(.+?)\s*(?:시켜|지시해|부탁해|전해|보내|말해|해)\s*줘?\s*$/i)) && !/(대한|관련|잠가|비밀번호)/.test(q)) { ccConfirm(null, m[1].replace(/\s*(이라고|라고)$/, '').trim().replace(/달$/, '줘')); return; }
   if ((m = q.match(/^(.+?)\s*(?:작업|대화|세션)?\s*(?:에게|한테|에)\s*["“'‘]?(.+?)["”'’]?\s*(?:이라고|라고)\s*(?:전해|보내|말해|지시해)\s*줘?\s*$/))) { claudeSendTo(m[1], m[2]); return; }
-  if (/(소요량|엑셀|xlsx|발주서|성적서|다운로드|바탕화면|내 ?파일|내 ?컴퓨터|pc|피씨)/i.test(q) && /(알려|보여|찾아|확인|뭐가|뭐 ?있|몇|얼마|부족|모자|재고|품번|품목|언제|어디)/.test(q) && !/(지워|삭제|정리|옮겨|이동|수정|고쳐|바꿔|저장|보내|메모해|노트|켜|실행|백업|설치)/.test(q) && !/(메일|이메일|편지함|답장|회신|일정|캘린더|스케줄|약속|슬랙|slack|드라이브|주소|연락처|전화|타타|납품카드|납기|출고|출하|배차|대리점|작업 ?목록|작업 ?리스트|할 ?일|해야 ?할|날씨|뉴스|인터넷|웹에서|검색해서|환율|주가|시세|미세먼지|기온|스킬|사내망)/i.test(q)) { if (relayReady()) relay('PC에 시키기: ' + (/소요량/.test(q) ? "내 PC 다운로드 폴더에서 가장 최근 'SC 소요량' 엑셀 파일을 찾아서, 재고가 소요량(합계)보다 적은 품목을 품번, 품명, 소요량, 재고, 부족 수량으로 알려줘. 읽기만 하고 파일은 수정하지 마. (원래 질문: " + q + ")" : '내 PC에서 읽기만 해서 답해줘(파일 수정·삭제·이동 금지): ' + q)); else pcSend(q); return; } // read-only lookups in PC work files (Excel, Downloads, ...): hand straight to Claude, no confirm card, same gesture; words the page answers from its own connectors are left to those branches
+  if (/(소요량|엑셀|xlsx|발주서|다운로드|바탕화면|내 ?파일|내 ?컴퓨터|pc|피씨)/i.test(q) && /(알려|보여|찾아|확인|뭐가|뭐 ?있|몇|얼마|부족|모자|재고|품번|품목|언제|어디)/.test(q) && !/(지워|삭제|정리|옮겨|이동|수정|고쳐|바꿔|저장|보내|메모해|노트|켜|실행|백업|설치)/.test(q) && !/(메일|이메일|편지함|답장|회신|일정|캘린더|스케줄|약속|슬랙|slack|드라이브|주소|연락처|전화|타타|납품카드|납기|출고|출하|배차|대리점|작업 ?목록|작업 ?리스트|할 ?일|해야 ?할|날씨|뉴스|인터넷|웹에서|검색해서|환율|주가|시세|미세먼지|기온|스킬|사내망)/i.test(q)) { if (relayReady()) relay('PC에 시키기: ' + (/소요량/.test(q) ? "내 PC 다운로드 폴더에서 가장 최근 'SC 소요량' 엑셀 파일을 찾아서, 재고가 소요량(합계)보다 적은 품목을 품번, 품명, 소요량, 재고, 부족 수량으로 알려줘. 읽기만 하고 파일은 수정하지 마. (원래 질문: " + q + ")" : '내 PC에서 읽기만 해서 답해줘(파일 수정·삭제·이동 금지): ' + q)); else pcSend(q); return; } // read-only lookups in PC work files (Excel, Downloads, ...): hand straight to Claude, no confirm card, same gesture; words the page answers from its own connectors are left to those branches
   if (/(사내망)/.test(q) && /(열어|켜|실행)/.test(q) || /(컴퓨터|pc|피씨|바탕화면|다운로드 ?폴더|내 ?파일)/i.test(q) && /(정리|열어|켜|실행|옮겨|지워|찾아|백업|해줘)/.test(q) && !/(메모해|노트)/.test(q)) { pcSend(q); return; }
   if (/(답장|회신)/.test(q) && /(초안|써|만들|작성)/.test(q)) { mailDraft(q); return; }
-  if (/(날씨|뉴스|인터넷|웹에서|검색해서|환율|주가|시세|미세먼지|기온)/.test(q) && !/(메모해|노트|슬랙)/.test(q)) {
-    const isW = /(날씨|기온|미세먼지)/.test(q), dn = isW ? byId('day-weather') : /뉴스/.test(q) ? byId('day-news') : null, fresh = dn && new Date(dn.updated).toDateString() === new Date().toDateString();
+  const wx = /(날씨|기온|미세먼지|(^|\s)(비|눈) ?(와|오|올|내려|온대)|우산|추워|더워|춥|덥)/.test(q);
+  if ((wx || /(뉴스|인터넷|(^|\s)웹에서|검색해서|환율|주가|시세)/.test(q)) && !/(메모해|노트|슬랙)/.test(q)) {
+    const isW = wx, dn = isW ? byId('day-weather') : /뉴스/.test(q) ? byId('day-news') : null, fresh = dn && new Date(dn.updated).toDateString() === new Date().toDateString();
     let home = ''; try { home = localStorage.getItem('sb-region') || ''; } catch (e) {}
     const place = isW ? tokens(q).filter(t => !/(오늘|내일|모레|이번|주말|날씨|기온|미세먼지|알려|보여|어때|어떄|브리핑|지금|실시간|검색|다시|최신|인터넷|현재|해줘|말해|우리|동네|여기|지역|좀|^뭐$)/.test(t)).join(' ') : '', region = isW ? (place || home) : '';
     const covers = !region || (dn && region.split(' ').every(w => dn.body.includes(w)));
@@ -1344,6 +1403,11 @@ function ask(raw) {
   if (/드라이브/.test(q) && /(찾아|검색|어디|있어|보여)/.test(q)) { driveSearch(q); return; }
   if (/(주소|주소록|연락처|전화번호|전화)/.test(q) && !/(메모해|노트|메일|찾아줘 노트)/.test(q)) { dealerLookup(q); return; }
   if (/(타타|납품카드|납기)/.test(q) && /(현황|언제|뭐|남은|알려|보여|있어|있지|몇|전표|카드|확인|일정)/.test(q) && !/(메모해|노트|슬랙|규칙|왜|어떻게)/.test(q)) { tataCheck(q); return; }
+  if (/(파레트|팔레트|박스 ?수|박스|포장|패킹)/.test(q) && /(몇|수|알려|현황|얼마|보여|확인|어떻게|됐|있)/.test(q) && !/(메모해|노트|타타|스킬|주문)/.test(q)) { packCheck(q); return; }
+  if (/(이력|누가|처리했|언제 ?(나갔|출고|준비|보냈))/.test(q) && /(출고|출하|준비|배차|대리점|작업|처리|나갔|보냈)/.test(q) && !/(메모해|노트|스킬|클로드|메일)/.test(q)) { histCheck(q); return; }
+  if (/전표/.test(q) && /(대기|목록|현황|뭐|알려|보여|있|몇|확인)/.test(q) && !/(타타|납품카드|성적서|메모해|노트)/.test(q)) { slipCheck(q); return; }
+  if (/(안 ?나간|안 ?나갔|미출고|못 ?나간)/.test(q) && !/(메모해|노트|타타)/.test(q)) { shipCheck('출고준비 목록'); return; }
+  if (/(배송|택배|화물|직송).{0,8}(어떻게|방식|방법|뭘로|뭐로)|(어떻게|뭘로|뭐로) ?(배송|보내)/.test(q) && !/(메모해|노트)/.test(q)) { dealerLookup(q.replace(/(어떻게|방식|방법|배송해|배송|보내|뭘로|뭐로|택배|화물|직송)/g, ' ')); return; }
   if (/(출고|출하|배차|대리점|작업 ?목록|작업 ?리스트|할 ?일|해야 ?할)/.test(q) && /(지시|현황|대기|남은|업체|어디|뭐|있|알려|보여|확인|완료|건|나갈|예정|말해|준비|대리점|목록|리스트|작업|할 ?일|내일|오늘)/.test(q) && !/(메모해|노트|기록|찾아|메일|관련|있었|스킬)/.test(q)) { shipCheck(q); return; }
   if (/스킬/.test(q) && /(추천|어떤|뭐|무슨|쓰면|써야|사용하|사용해|배열|골라|필요)/.test(q)) { advise(q); return; }
   if (/^(전체|리셋|초기화|전체 ?보기|처음으로)/.test(q)) { setFocus(null); $('#jout').hidden = true; fit(); say('전체 그래프로 돌아왔습니다. 노트 ' + db.notes.length + '개가 연결되어 있습니다.'); return; }
@@ -1351,6 +1415,7 @@ function ask(raw) {
     const text = m[1].trim(), n = newNote(text.length > 28 ? text.slice(0, 28) + '…' : text, text, 'idea');
     setTimeout(() => setFocus(new Set([n.id])), 60);
     say(`기록했습니다. 「${n.title}」을 아이디어 폴더에 넣어 두었습니다.`, '', { label:'열어서 다듬기', run:() => openNote(n.id) }); return; }
+  if (mcp && !ask.noCo && q[0] !== '#' && q.length <= 22 && q.split(/\s+/).length <= 3 && !/(열어|열기|메모|노트|스킬|클로드)/.test(q)) { companyTry(q).then(ok => { if (!ok) { ask.noCo = true; try { ask(q); } finally { ask.noCo = false; } } }); return; } // a bare company name: answer from every table of the shipping web app
   const open = q.match(/^(.+?)\s*(?:열어 ?줘|열기|열어)$/);
   if (!open && sampler && !aiOff && looksLikeQuestion(q)) { askAI(q); return; }
   const { tk, hits } = search(open ? open[1] : q);
