@@ -255,6 +255,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .an{margin-top:10px;font-size:13px;line-height:1.55;color:var(--muted)}
 .an span{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em}
 .an ul{margin:4px 0 0;padding-left:18px}
+.jres .jbad,.jres .jbad:hover{display:inline-flex;justify-self:end;margin-top:10px;padding:6px 10px;min-height:32px;border:1px solid var(--line);border-radius:4px;background:none;color:var(--muted);font-size:12px}
 </style>
 
 <div class="app" id="app">
@@ -313,7 +314,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       </div>
       <div class="clus" id="clus"></div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r45<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r46<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -689,6 +690,9 @@ document.addEventListener('click', e => {
   else if (b.dataset.task) { const t = tasks.find(x => x.id === b.dataset.task); if (t) { $('#tasks').classList.remove('open'); showTask(t); } }
   else if (b.dataset.web) { let hm = ''; try { hm = localStorage.getItem('sb-region') || ''; } catch (e) {} webAsk('지금 ' + (/(날씨|기온)/.test(b.dataset.web) && hm && !b.dataset.web.includes(hm) ? hm + ' ' : '') + b.dataset.web + ' 검색해서 알려줘'); }
   else if (b.dataset.diag) diagnose();
+  else if (b.dataset.bad) { logMiss(b.dataset.bad, 'bad', $('#jsay').textContent); b.disabled = true; b.textContent = '기록했습니다'; toast('기록했습니다. “못 답한 질문 보여줘”로 모아 볼 수 있습니다.'); }
+  else if (b.dataset.missclear) { misses = []; try { localStorage.removeItem('sb-miss'); } catch (e) {} say('목록을 비웠습니다.'); }
+  else if (b.dataset.missend) { const list = misses.slice(0, 25).map((x, i) => `${i + 1}. ${x.q} (${MISSK[x.kind] || x.kind}${x.ans ? ', 답: ' + x.ans.slice(0, 40) : ''})`).join('\n'); if (relayReady()) relay('Claude 새 작업으로 시키기: 자비스가 제대로 답하지 못한 질문 목록이야. 저장소 esu의 eval/questions.json 기준 질문에 추가하고, 자비스가 이 질문들에 바로 답하도록 고친 뒤 node eval/run.js 로 점수를 다시 확인해줘.\n' + list); else say('지금은 Claude에게 넘길 수 없습니다. 목록을 길게 눌러 복사해 Claude 대화에 붙여 주세요.'); }
   else if (b.dataset.perm) openPerms();
   else if (b.dataset.cgo) ccGo();
   else if (b.dataset.ccancel) { ccPending = null; ccTarget = null; say('보내지 않았습니다.'); }
@@ -816,6 +820,7 @@ function synth(text) { if (!('speechSynthesis' in window)) return; try { const b
 function say(text, html, action, opt) {
   const out = $('#jout'), p = $('#jsay'); const wasHidden = out.hidden; out.hidden = false; out.scrollTop = 0; if (wasHidden && !reduce) { out.classList.remove('pop'); void out.offsetWidth; out.classList.add('pop'); } if (!(opt && opt.quiet)) { flashT = performance.now(); blip(1700, 1700, .055, .05); setTimeout(() => blip(2300, 2300, .085, .05), 85); } $('#hints').hidden = true; $('#jres').innerHTML = html || '';
   if (action) { const b = document.createElement('button'); b.className = 'jact'; b.textContent = action.label; b.onclick = action.run; $('#jres').append(b); }
+  if (curQ && !(opt && opt.quiet) && !/^(못 ?답한|틀린 ?답|점검 ?목록)/.test(curQ) && !/data-miss/.test(html || '')) { const w = document.createElement('button'); w.className = 'jbad'; w.dataset.bad = curQ; w.textContent = '이 답이 틀렸어요'; $('#jres').append(w); }
   clearInterval(typeT); p.classList.remove('done'); p.classList.toggle('big', !!(opt && opt.big)); p.textContent = ''; let i = 0; talking = !reduce;
   if (reduce) { p.textContent = text; p.classList.add('done'); } else typeT = setInterval(() => { p.textContent = text.slice(0, i += 2); if (i >= text.length) { clearInterval(typeT); p.classList.add('done'); talking = false; } }, 22);
   if (!(opt && opt.quiet)) speak((opt && opt.speech) || text);
@@ -1043,7 +1048,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r45'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r46'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1266,8 +1271,15 @@ function pick(id) { const n = byId(id); if (!n || !nodeById.get(id)) return; if 
   const d = new Date(n.updated);
   say(`「${n.title || '제목 없음'}」을 확대했습니다.`, `<div class="jcard"><div class="jmeta"><i style="background:${FOLD[n.folder].color}"></i>${FOLD[n.folder].name} · ${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}${n.tags.length ? ' · ' + esc(n.tags.map(t => '#' + t).join(' ')) : ''}</div><p>${rich(n.body.slice(0, 4200))}${n.body.length > 4200 ? '…' : ''}</p><div class="jrow"><button class="jact" data-id="${n.id}">열어서 편집</button>${lastQ ? '<button class="jact ghost" data-back="1">결과 목록으로</button>' : ''}</div></div>`);
   setFocus(new Set([id])); blip(900, 1500, .12, .04); }
+/* questions Jarvis could not answer well are kept on this device so they can be handed to Claude and added to the baseline set */
+let misses = [], curQ = ''; try { misses = JSON.parse(localStorage.getItem('sb-miss') || '[]').filter(x => x && x.q); } catch (e) {}
+function logMiss(q, kind, ans) { if (!q || /^(못 ?답한|틀린 ?답|점검 ?목록)/.test(q)) return; misses = misses.filter(x => x.q !== q); misses.unshift({ q: q.slice(0, 200), kind, ans: String(ans || '').slice(0, 120), at: Date.now() }); misses = misses.slice(0, 60); try { localStorage.setItem('sb-miss', JSON.stringify(misses)); } catch (e) {} }
+const MISSK = { miss: '기록을 못 찾음', search: '질문인데 검색 결과만 보여줌', bad: '답이 틀렸다고 표시함', fail: '처리하다 실패함' };
+function showMisses() { setFocus(null); if (!misses.length) { say('제대로 답하지 못한 질문 기록이 없습니다. 답이 이상하면 답변 아래의 “이 답이 틀렸어요”를 눌러 주세요.'); return; }
+  say(`제대로 답하지 못한 질문이 ${misses.length}개 쌓여 있습니다. Claude에게 넘기면 기준 질문에 넣고 고칩니다.`, misses.map(x => `<div class="sk"><b>${esc(x.q)}</b><small>${MISSK[x.kind] || x.kind} · ${ago(x.at)}${x.ans ? ' · 답: ' + esc(x.ans) : ''}</small></div>`).join('') + '<div class="jrow"><button class="jact" data-missend="1">Claude에게 넘겨서 고치게 하기</button><button class="jact ghost" data-missclear="1">목록 비우기</button></div>', null, { speech: `제대로 답하지 못한 질문이 ${misses.length}개 있습니다.` }); }
 function ask(raw) {
-  const q = raw.trim(); if (!q) return; show('graph'); $('#jq').value = '';
+  const q = raw.trim(); if (!q) return; show('graph'); $('#jq').value = ''; curQ = q;
+  if (/^(못 ?답한|틀린 ?답|이상한 ?답|점검 ?목록)|(못 ?답한|틀린|이상한) ?(질문|답).*(보여|알려|목록|뭐)/.test(q)) { showMisses(); return; }
   const bar = $('#jbar'); bar.classList.add('busy'); setTimeout(() => bar.classList.remove('busy'), 900); flashT = performance.now();
   let m;
   if (/^(잠가|잠금|잠그기|다시 잠)/.test(q) && !/(풀어|해제|없애)/.test(q)) { relock(); say('중요 노트를 다시 잠갔습니다.'); return; }
@@ -1338,9 +1350,11 @@ function ask(raw) {
   if (!hits.length && mcp && /(대리점|작업|출고|출하|할 ?일|준비|배차)/.test(q)) { shipCheck(q); return; }
   if (!hits.length && sampler && !aiOff && q.length >= 4) { askAI(q); return; }
   if (!hits.length) { setFocus(null);
+    logMiss(q, 'miss');
     say(db.notes.length ? `“${q}”와 맞는 기록을 찾지 못했습니다. 지금 바로 남겨 둘까요?` : '아직 저장된 노트가 없습니다. 이 내용으로 첫 노트를 만들까요?', relayBtn(q), { label:'이 내용으로 새 노트', run:() => openNote(newNote(q, '', 'idea').id, true) }); return; }
   lastQ = q; const ids = new Set(hits.map(h => h.n.id)); tk.filter(t => t[0] === '#' && nodeById.has(t)).forEach(t => ids.add(t));
   const label = tk.map(t => t.replace('#', '')).join(' · ');
+  if (looksLikeQuestion(q) && q[0] !== '#') logMiss(q, 'search', hits[0].n.title);
   const text = `“${label}” 관련 기록 ${hits.length}건을 찾았습니다. 가장 가까운 건 「${hits[0].n.title}」입니다.`;
   say(text, hits.map(h => `<button data-pick="${h.n.id}"><i style="background:${FOLD[h.n.folder].color}"></i><b>${h.n.locked ? LOCK : ''}${esc(h.n.title || '제목 없음')}</b><small>${isLocked(h.n) ? '잠긴 노트입니다. 누르면 비밀번호를 묻습니다.' : snippet(h.n, tk)}</small></button>`).join('') + (q[0] === '#' ? '' : relayBtn(q)));
   setFocus(ids);
