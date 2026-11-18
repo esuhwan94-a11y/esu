@@ -313,7 +313,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       </div>
       <div class="clus" id="clus"></div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r44<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r45<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -1035,14 +1035,15 @@ function subscribeTask(t) { if (!dbx || t.unsub || t.status !== 'working') retur
 function relay(q) { // call straight from the viewer's tap or Enter: sending to Claude needs a fresh gesture
   if (!relayReady()) return false; relayLast = q; setFocus(null);
   const t = { id: 'r' + Date.now().toString(36) + uid().slice(0, 4), q, status: 'working', at: Date.now() }; let pr;
-  try { pr = cmt.sendToClaude({ anchor: relayAnchor, text: `[자비스 요청 ${t.id}] ${q}`.slice(0, 1800) }); } catch (e) { pr = Promise.reject(e); }
+  const hint = /^(PC에 시키기|Claude 새 작업으로 시키기): /.test(q) && !/읽기만/.test(q) ? skillHint(askedOf(q)) : ''; // work requests carry the skills to use
+  try { pr = cmt.sendToClaude({ anchor: relayAnchor, text: `[자비스 요청 ${t.id}] ${q}`.slice(0, 1800 - hint.length) + hint }); } catch (e) { pr = Promise.reject(e); }
   tasks.unshift(t); saveTasks(); renderTasks(); curTask = t.id;
   say('Claude에게 넘겼습니다. 1분쯤 걸립니다. 그동안 다른 걸 물어봐도 되고, 답이 오면 오른쪽 요청 목록에 표시하고 알려드립니다.', '', null, { speech: '넘겼습니다. 답이 오면 알려드리겠습니다.' });
   pr.then(() => subscribeTask(t), e => { const c = e && e.code; t.status = 'failed'; t.text = c === 'claude_unavailable' ? '지금은 Claude에게 넘길 수 없습니다. 음성으로 말했다면 아래 버튼을 한 번 눌러 주세요. 그래도 안 되면 요청을 받아 줄 Claude 대화가 꺼져 있는 것입니다.' : c === 'not_granted' ? 'Claude에게 넘기는 권한(댓글)을 허용하지 않았습니다. 권한 창에서 허용해 주세요.' : `Claude에게 넘기지 못했습니다. (코드: ${c || '없음'})`; saveTasks(); renderTasks(); if (curTask === t.id) showTask(t); });
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r44'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r45'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1231,6 +1232,9 @@ function matchSkills(text, max) { // full catalog from the dashboard: match the 
   const tk = tokens(text).map(t => t.replace('#', '')).filter(t => t.length >= 2 && !/(스킬|추천|어떤|무슨|쓰면|써야|사용|좋을|하려|할려|만들려|할건데|만들건데|작업|이거|저거|해줘|알려)/.test(t));
   if (!tk.length) return [];
   return allSkills().map(k => { const hay = (k.name + ' ' + (k.desc || '') + ' ' + (k.plugin || '')).toLowerCase(); return { k, s: tk.filter(t => hay.includes(t)).length }; }).filter(x => x.s).sort((a, b) => b.s - a.s).slice(0, max || 8).map(x => x.k); }
+function skillHint(q) { const low = q.toLowerCase(), sc = kw => kw.split('|').filter(k => low.includes(k)).length;
+  const own = SK.map(r => ({ r, s: sc(r[2]) })).filter(x => x.s).sort((a, b) => b.s - a.s).slice(0, 4).flatMap(x => x.r[0].split(' · ')), names = [...new Set([...own, ...matchSkills(q, 3).map(k => k.name)])].slice(0, 6);
+  return '\n[스킬] ' + (names.length ? '이 작업에 맞는 스킬: ' + names.join(', ') + '. 시작할 때 이 스킬을 먼저 불러와서 진행해줘. ' : '') + '맞는 스킬이 없거나 부족하면 find-skills 스킬로 찾아보고, 새 스킬 설치는 점검하고 확인받은 뒤에 해줘.'; }
 function advise(q) {
   const task = q.replace(/(어떤|무슨|뭐|뭘|어느)?\s*스킬.*$/, '').replace(/(을|를)?\s*(작업)?\s*(하려는데|할려는데|할려하는데|하려고 하는데|하려고|하려면|할 건데|할건데|할 때|하는데|만들려는데|만들건데)\s*$/, '').trim(), low = q.toLowerCase().replace(/스킬/g, '');
   if (task.length < 2) { say('어떤 작업인지 같이 적어 주세요. 예: “사내 재고 웹 만들려는데 어떤 스킬?”'); return; }
