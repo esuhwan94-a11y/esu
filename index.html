@@ -6,6 +6,7 @@
 <style>body{margin:0}[hidden]{display:none!important}</style>
 </head>
 <body>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <meta name="claude:viewport-fit-sides" content="cover">
 <title>세컨드 브레인</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Share+Tech+Mono&display=swap">
@@ -249,6 +250,19 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
 .clus button.on{border-color:var(--res);color:var(--fg)}.clus button.on i{background:var(--res)}
 @media (max-width:900px){.brief{display:none}}
 @media (max-width:760px){.hello{top:14px}.hello .t{font-size:38px}.hello .g{font-size:15.5px;margin-top:8px}.clus{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;bottom:calc(110px + env(safe-area-inset-bottom, 0px));scrollbar-width:none}.clus button{min-height:36px}.legend .seg{display:none}}
+/* r43: structured answers from Claude: big title, table, notes */
+#jout .jsay.big{font-size:21px;font-weight:700;line-height:1.35}
+.atw{overflow-x:auto;min-width:0;max-width:100%;margin-top:10px;border-top:1px solid var(--line)}
+.at{width:100%;border-collapse:collapse;font-size:15.5px;line-height:1.4}
+.at th{font-family:var(--mono);font-size:11.5px;font-weight:400;letter-spacing:.14em;color:var(--muted);text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.at td{height:42px;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle;overflow-wrap:anywhere}
+.at th:first-child,.at td:first-child{padding-left:2px}.at th:last-child,.at td:last-child{padding-right:2px}
+.at td:first-child{font-family:var(--mono);white-space:nowrap}
+.at .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.at td.e{font-weight:700;color:var(--res)}
+.an{margin-top:10px;font-size:13px;line-height:1.55;color:var(--muted)}
+.an span{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em}
+.an ul{margin:4px 0 0;padding-left:18px}
 </style>
 
 <div class="app" id="app">
@@ -307,7 +321,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       </div>
       <div class="clus" id="clus"></div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r42<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r44<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -810,7 +824,7 @@ function synth(text) { if (!('speechSynthesis' in window)) return; try { const b
 function say(text, html, action, opt) {
   const out = $('#jout'), p = $('#jsay'); const wasHidden = out.hidden; out.hidden = false; out.scrollTop = 0; if (wasHidden && !reduce) { out.classList.remove('pop'); void out.offsetWidth; out.classList.add('pop'); } if (!(opt && opt.quiet)) { flashT = performance.now(); blip(1700, 1700, .055, .05); setTimeout(() => blip(2300, 2300, .085, .05), 85); } $('#hints').hidden = true; $('#jres').innerHTML = html || '';
   if (action) { const b = document.createElement('button'); b.className = 'jact'; b.textContent = action.label; b.onclick = action.run; $('#jres').append(b); }
-  clearInterval(typeT); p.classList.remove('done'); p.textContent = ''; let i = 0; talking = !reduce;
+  clearInterval(typeT); p.classList.remove('done'); p.classList.toggle('big', !!(opt && opt.big)); p.textContent = ''; let i = 0; talking = !reduce;
   if (reduce) { p.textContent = text; p.classList.add('done'); } else typeT = setInterval(() => { p.textContent = text.slice(0, i += 2); if (i >= text.length) { clearInterval(typeT); p.classList.add('done'); talking = false; } }, 22);
   if (!(opt && opt.quiet)) speak((opt && opt.speech) || text);
 }
@@ -1002,19 +1016,29 @@ async function claudeSendTo(name, text) { setBusy(true); try { if (!ccList.lengt
 /* ---------- relay: hand a request to the Claude session that watches this page, and show the answer it writes back ---------- */
 let cmt = null, dbx = null, relayAnchor = null, relayCan = '', relayLast = '';
 const relayReady = () => !!(cmt && dbx && relayAnchor);
+const relayBtn = q => relayReady() ? (relayLast = q, '<div class="jrow"><button class="jact ghost" data-relay="1">Claude에게 넘겨서 더 찾아보기</button></div>') : ''; // one tap (a fresh gesture) hands this turn's original question to Claude
 let tasks = [], curTask = ''; try { tasks = JSON.parse(localStorage.getItem('sb-tasks') || '[]').filter(t => t && t.id && t.q); } catch (e) {}
-const saveTasks = () => { try { localStorage.setItem('sb-tasks', JSON.stringify(tasks.slice(0, 20).map(t => ({ id: t.id, q: t.q, status: t.status, text: t.text, link: t.link, linkLabel: t.linkLabel, at: t.at, doneAt: t.doneAt })))); } catch (e) {} };
+const saveTasks = () => { try { localStorage.setItem('sb-tasks', JSON.stringify(tasks.slice(0, 20).map(t => ({ id: t.id, q: t.q, status: t.status, text: t.text, link: t.link, linkLabel: t.linkLabel, title: t.title, table: t.table, notes: t.notes, at: t.at, doneAt: t.doneAt })))); } catch (e) {} };
 const ago = ms => { const sec = Math.max(0, Math.round((Date.now() - ms) / 1000)); return sec < 60 ? `${sec}초 전` : sec < 3600 ? `${Math.floor(sec / 60)}분 전` : `${Math.floor(sec / 3600)}시간 전`; };
 function renderTasks() { const w = tasks.filter(t => t.status === 'working').length; $('#tasks').hidden = false; const tg = $('#ttoggle'); tg.hidden = false; tg.innerHTML = w ? `<i></i>요청 진행 중 ${w}` : '뭐 알려드릴까요?'; $('#tclear').hidden = !tasks.some(t => t.status !== 'working');
   $('#tlist').innerHTML = (w ? '' : `<div class="tq">뭐 알려드릴까요?</div><div class="tsug">${['오늘 브리핑해줘', '대리점 작업목록', '메일 확인해줘', '오늘 날씨', '이번 주 일정', '타타대우 납기 현황', '뭐 할 수 있어?'].map(x => `<button data-ask="${x}">${x.replace(/해줘$/, '')}</button>`).join('')}</div>`) + (tasks.length ? '' : '<div class="tempty">Claude에게 넘긴 요청이 여기에 쌓입니다.</div>') + tasks.map(t => `<button class="titem ${t.status}" data-task="${esc(t.id)}"><i></i><b>${esc(t.q.replace(/^(PC에 시키기|Claude 새 작업으로 시키기): /, ''))}</b><small>${t.status === 'working' ? '작업 중 · ' + ago(t.at) : t.status === 'done' ? '답 도착 · ' + ago(t.doneAt || t.at) : '실패 · ' + ago(t.at)}</small></button>`).join('');
   $('#jbar').classList.toggle('busy', w > 0); }
+/* answer documents are untrusted data: keep strings only, cap the table at 8 columns and 40 rows */
+const ansClean = d => { const S = v => v == null || typeof v === 'object' ? '' : String(v), tb = d.table, ok = tb && typeof tb === 'object' && Array.isArray(tb.cols) && Array.isArray(tb.rows);
+  return { title: S(d.title).slice(0, 120), table: ok ? { cols: tb.cols.slice(0, 8).map(c => S(c).slice(0, 40)), rows: tb.rows.filter(Array.isArray).slice(0, 40).map(r => r.slice(0, 8).map(c => S(c).slice(0, 200))), emph: Number.isInteger(tb.emph) ? tb.emph : -1 } : null, notes: Array.isArray(d.notes) ? d.notes.slice(0, 8).map(n => S(n).slice(0, 300)).filter(Boolean) : [] }; };
+const askedOf = q => { const m = /^PC에 시키기:/.test(q) && q.match(/\(원래 질문: ([\s\S]*)\)\s*$/); return m ? m[1] : q.replace(/^(PC에 시키기|Claude 새 작업으로 시키기): /, '').replace(/^내 PC에서 읽기만 해서 답해줘\([^)]*\): /, ''); };
+function ansHtml(a) { const tb = a.table, nc = tb ? Math.max(tb.cols.length, ...tb.rows.map(r => r.length)) : 0, isNum = v => /^[-+]?[\d,.]*\d[\d,.]*\s*(%|개|원|ea|kg)?$/i.test(v.trim());
+  const num = [...Array(nc)].map((_, i) => i > 0 && tb.rows.some(r => (r[i] || '').trim()) && tb.rows.every(r => !(r[i] || '').trim() || isNum(r[i]))), cls = i => { const c = (num[i] ? 'n' : '') + (i === tb.emph ? ' e' : ''); return c.trim() ? ` class="${c.trim()}"` : ''; };
+  return (nc ? `<div class="atw"><table class="at">${tb.cols.length ? `<thead><tr>${[...Array(nc)].map((_, i) => `<th${cls(i)}>${esc(tb.cols[i] || '')}</th>`).join('')}</tr></thead>` : ''}<tbody>${tb.rows.map(r => `<tr>${[...Array(nc)].map((_, i) => `<td${cls(i)}>${esc(r[i] || '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '')
+    + (a.notes.length ? `<div class="an"><span>참고</span><ul>${a.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>` : ''); }
 function showTask(t) { curTask = t.id; const link = t.link ? `<div class="jrow"><a href="${esc(String(t.link))}" target="_blank" rel="noopener">↗ ${esc(String(t.linkLabel || '열기'))}</a></div>` : '';
-  if (t.status === 'done') say(t.text, `<div class="jmeta" style="margin-top:6px">물어본 것: ${esc(t.q)}</div>` + link);
-  else if (t.status === 'failed') say(t.text || '이 요청은 처리하지 못했습니다.', '<div class="jrow"><button class="jact" data-relay="1">다시 넘기기</button></div>');
+  if (t.status === 'done') { const a = ansClean(t), meta = `<div class="jmeta" style="margin-top:6px">물어본 것: ${esc(askedOf(t.q))}</div>`, tx = String(t.text || '');
+    if (a.title || a.table || a.notes.length) say(a.title || (tx.match(/^[\s\S]*?[.!?](?=\s|$)/) || [tx])[0].slice(0, 80), ansHtml(a) + link + meta, null, { speech: tx, big: true }); else say(t.text, meta + link); }
+  else if (t.status === 'failed') { relayLast = t.q; say(t.text || '이 요청은 처리하지 못했습니다.', '<div class="jrow"><button class="jact" data-relay="1">다시 넘기기</button></div>'); }
   else { const sec = Math.round((Date.now() - t.at) / 1000); say(`「${t.q.slice(0, 40)}」는 아직 작업 중입니다. 보낸 지 ${sec < 60 ? sec + '초' : Math.floor(sec / 60) + '분 ' + (sec % 60) + '초'} 됐습니다. 답이 오면 알려드리겠습니다.`); } }
 function subscribeTask(t) { if (!dbx || t.unsub || t.status !== 'working') return;
   try { t.unsub = dbx.doc('answers/' + t.id).onSnapshot(snap => { const d = snap && snap.exists && (typeof snap.data === 'function' ? snap.data() : snap.data); if (!d || !d.text || t.status === 'done') return;
-      t.status = 'done'; t.text = String(d.text).slice(0, 3000); t.link = d.link || ''; t.linkLabel = d.link_label || ''; t.doneAt = Date.now(); try { t.unsub(); } catch (e) {} t.unsub = null; saveTasks(); renderTasks();
+      t.status = 'done'; t.text = String(d.text).slice(0, 3000); t.link = d.link || ''; t.linkLabel = d.link_label || ''; Object.assign(t, ansClean(d)); t.doneAt = Date.now(); try { t.unsub(); } catch (e) {} t.unsub = null; saveTasks(); renderTasks();
       if (curTask === t.id && !$('#jout').hidden) showTask(t); else { blip(1700, 1700, .055, .05); setTimeout(() => blip(2300, 2300, .085, .05), 85); toast(`답이 왔습니다: ${t.q.slice(0, 22)}`); if ($('#jout').hidden) showTask(t); } }, () => {}); } catch (e) {} }
 function relay(q) { // call straight from the viewer's tap or Enter: sending to Claude needs a fresh gesture
   if (!relayReady()) return false; relayLast = q; setFocus(null);
@@ -1026,7 +1050,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r42'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r44'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1143,7 +1167,7 @@ ${memory ? '사용자에 대해 기억하고 있는 것(항상 따른다):\n' + 
     const blocks = String(res.text || '').split(/\n\s*\n/).map(x => x.trim()).filter(Boolean), ans = (blocks[blocks.length - 1] || '답을 만들지 못했습니다.').replace(/[*#`]/g, '').replace(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]+/g, '');
     aiHist.push({ role: 'user', content: q }, { role: 'assistant', content: ans }); aiHist = aiHist.slice(-6); setBusy(false);
     const cited = [...new Set((ans.match(/「([^」]+)」/g) || []).map(x => x.slice(1, -1)))].map(byTitle).filter(Boolean);
-    say(ans, cited.map(n => `<button data-pick="${n.id}"><i style="background:${FOLD[n.folder].color}"></i><b>${n.locked ? LOCK : ''}${esc(n.title)}</b><small>${isLocked(n) ? '잠긴 노트입니다.' : esc(n.body.replace(/\[\[|\]\]/g, '').slice(0, 90))}</small></button>`).join('') + (aiUsedMail && mailList.length ? '<div class="skh">메일 목록</div>' + mailHtml() : ''));
+    say(ans, cited.map(n => `<button data-pick="${n.id}"><i style="background:${FOLD[n.folder].color}"></i><b>${n.locked ? LOCK : ''}${esc(n.title)}</b><small>${isLocked(n) ? '잠긴 노트입니다.' : esc(n.body.replace(/\[\[|\]\]/g, '').slice(0, 90))}</small></button>`).join('') + (aiUsedMail && mailList.length ? '<div class="skh">메일 목록</div>' + mailHtml() : '') + relayBtn(q));
     if (cited.length) setFocus(new Set(cited.map(n => n.id)));
   } catch (e) { setBusy(false); talking = false; const c = e && e.code;
     if (c === 'not_granted' || c === 'sampling_disabled') { aiOff = true; say('AI 답변을 허용하지 않아 단어 검색으로만 찾습니다. 다시 켜려면 톱니바퀴의 권한 창에서 허용해 주세요.'); }
@@ -1288,6 +1312,7 @@ function ask(raw) {
   if (/(클로드|claude)/i.test(q) && /(작업|세션|대화)/.test(q) && /(뭐|목록|돌아가|진행|상태|보여|알려|확인|있어)/.test(q) && !/(노트|메모|잠가|스킬)/.test(q)) { claudeList(); return; }
   if ((m = q.match(/^(?:클로드|claude)\s*(?:한테|에게|에)\s*(.+?)\s*(?:시켜|지시해|부탁해|전해|보내|말해|해)\s*줘?\s*$/i)) && !/(대한|관련|잠가|비밀번호)/.test(q)) { ccConfirm(null, m[1].replace(/\s*(이라고|라고)$/, '').trim().replace(/달$/, '줘')); return; }
   if ((m = q.match(/^(.+?)\s*(?:작업|대화|세션)?\s*(?:에게|한테|에)\s*["“'‘]?(.+?)["”'’]?\s*(?:이라고|라고)\s*(?:전해|보내|말해|지시해)\s*줘?\s*$/))) { claudeSendTo(m[1], m[2]); return; }
+  if (/(소요량|엑셀|xlsx|발주서|성적서|다운로드|바탕화면|내 ?파일|내 ?컴퓨터|pc|피씨)/i.test(q) && /(알려|보여|찾아|확인|뭐가|뭐 ?있|몇|얼마|부족|모자|재고|품번|품목|언제|어디)/.test(q) && !/(지워|삭제|정리|옮겨|이동|수정|고쳐|바꿔|저장|보내|메모해|노트|켜|실행|백업|설치)/.test(q) && !/(메일|이메일|편지함|답장|회신|일정|캘린더|스케줄|약속|슬랙|slack|드라이브|주소|연락처|전화|타타|납품카드|납기|출고|출하|배차|대리점|작업 ?목록|작업 ?리스트|할 ?일|해야 ?할|날씨|뉴스|인터넷|웹에서|검색해서|환율|주가|시세|미세먼지|기온|스킬|사내망)/i.test(q)) { if (relayReady()) relay('PC에 시키기: ' + (/소요량/.test(q) ? "내 PC 다운로드 폴더에서 가장 최근 'SC 소요량' 엑셀 파일을 찾아서, 재고가 소요량(합계)보다 적은 품목을 품번, 품명, 소요량, 재고, 부족 수량으로 알려줘. 읽기만 하고 파일은 수정하지 마. (원래 질문: " + q + ")" : '내 PC에서 읽기만 해서 답해줘(파일 수정·삭제·이동 금지): ' + q)); else pcSend(q); return; } // read-only lookups in PC work files (Excel, Downloads, ...): hand straight to Claude, no confirm card, same gesture; words the page answers from its own connectors are left to those branches
   if (/(사내망)/.test(q) && /(열어|켜|실행)/.test(q) || /(컴퓨터|pc|피씨|바탕화면|다운로드 ?폴더|내 ?파일)/i.test(q) && /(정리|열어|켜|실행|옮겨|지워|찾아|백업|해줘)/.test(q) && !/(메모해|노트)/.test(q)) { pcSend(q); return; }
   if (/(답장|회신)/.test(q) && /(초안|써|만들|작성)/.test(q)) { mailDraft(q); return; }
   if (/(날씨|뉴스|인터넷|웹에서|검색해서|환율|주가|시세|미세먼지|기온)/.test(q) && !/(메모해|노트|슬랙)/.test(q)) {
@@ -1317,11 +1342,11 @@ function ask(raw) {
   if (!hits.length && mcp && /(대리점|작업|출고|출하|할 ?일|준비|배차)/.test(q)) { shipCheck(q); return; }
   if (!hits.length && sampler && !aiOff && q.length >= 4) { askAI(q); return; }
   if (!hits.length) { setFocus(null);
-    say(db.notes.length ? `“${q}”와 맞는 기록을 찾지 못했습니다. 지금 바로 남겨 둘까요?` : '아직 저장된 노트가 없습니다. 이 내용으로 첫 노트를 만들까요?', '', { label:'이 내용으로 새 노트', run:() => openNote(newNote(q, '', 'idea').id, true) }); return; }
+    say(db.notes.length ? `“${q}”와 맞는 기록을 찾지 못했습니다. 지금 바로 남겨 둘까요?` : '아직 저장된 노트가 없습니다. 이 내용으로 첫 노트를 만들까요?', relayBtn(q), { label:'이 내용으로 새 노트', run:() => openNote(newNote(q, '', 'idea').id, true) }); return; }
   lastQ = q; const ids = new Set(hits.map(h => h.n.id)); tk.filter(t => t[0] === '#' && nodeById.has(t)).forEach(t => ids.add(t));
   const label = tk.map(t => t.replace('#', '')).join(' · ');
   const text = `“${label}” 관련 기록 ${hits.length}건을 찾았습니다. 가장 가까운 건 「${hits[0].n.title}」입니다.`;
-  say(text, hits.map(h => `<button data-pick="${h.n.id}"><i style="background:${FOLD[h.n.folder].color}"></i><b>${h.n.locked ? LOCK : ''}${esc(h.n.title || '제목 없음')}</b><small>${isLocked(h.n) ? '잠긴 노트입니다. 누르면 비밀번호를 묻습니다.' : snippet(h.n, tk)}</small></button>`).join(''));
+  say(text, hits.map(h => `<button data-pick="${h.n.id}"><i style="background:${FOLD[h.n.folder].color}"></i><b>${h.n.locked ? LOCK : ''}${esc(h.n.title || '제목 없음')}</b><small>${isLocked(h.n) ? '잠긴 노트입니다. 누르면 비밀번호를 묻습니다.' : snippet(h.n, tk)}</small></button>`).join('') + (q[0] === '#' ? '' : relayBtn(q)));
   setFocus(ids);
 }
 $('#jbar').addEventListener('submit', e => { e.preventDefault(); ask($('#jq').value); });
@@ -1387,5 +1412,6 @@ for (let i = 0; i < 400; i++) step();
 alpha = .5; fit(); if (camTo) { Object.assign(cam, camTo); camTo = null; } requestAnimationFrame(draw);
 })();
 </script>
-</body>
+
+</body></html></body>
 </html>
