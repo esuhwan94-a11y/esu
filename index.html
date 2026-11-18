@@ -322,7 +322,7 @@ svg.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-widt
       </div>
       <div class="clus" id="clus"></div>
       <div class="jout" id="jout" hidden>
-        <div class="jhead">J.A.R.V.I.S · 응답 · r47<button id="jclose">닫기</button></div>
+        <div class="jhead">J.A.R.V.I.S · 응답 · r48<button id="jclose">닫기</button></div>
         <p class="jsay" id="jsay"></p>
         <div class="jres" id="jres"></div>
       </div>
@@ -973,7 +973,7 @@ async function slipCheck(q) { setFocus(null); const kw = cleanKw(q);
   try { const rows = await sql(`select company, pack_no, pack_kind, total_qty, earliest_due, status, slip_date, created_at from public.kab_slip_queue where cancelled_at is null${kw.length ? ' and (' + kw.map(k => `company ilike '%${k}%'`).join(' or ') + ')' : ''} order by created_at desc limit 40`); setBusy(false);
     if (!rows.length) { say('통합웹 출고전표 목록에 남아 있는 건이 없습니다.'); return; }
     const cnt = {}; rows.forEach(r => { cnt[r.status || '상태 없음'] = (cnt[r.status || '상태 없음'] || 0) + 1; });
-    say(`출고전표 목록은 ${rows.length}건입니다. ${Object.entries(cnt).map(([k, v]) => `${k} ${v}건`).join(', ')}.`, rows.map(r => `<div class="sk"><b>${esc(r.company || '')} <small>${esc(r.status || '')}${r.pack_no ? ' · ' + esc(String(r.pack_no)) : ''}</small></b><small>수량 ${r.total_qty ?? ''}${r.earliest_due ? ' · 납기 ' + esc(String(r.earliest_due)) : ''}${r.slip_date ? ' · 전표일 ' + esc(String(r.slip_date)) : ''} · 등록 ${pgDate(r.created_at)}</small></div>`).join(''));
+    say(`출고전표 목록은 ${rows.length}건입니다. ${Object.entries(cnt).map(([k, v]) => `${k} ${v}건`).join(', ')}.`, rows.map(r => `<div class="sk"><b>${esc(r.company || '')} <small>${esc(r.status || '')}${r.pack_no ? ' · ' + esc(String(r.pack_no)) : ''}</small></b><small>수량 ${esc(String(r.total_qty ?? ''))}${r.earliest_due ? ' · 납기 ' + esc(String(r.earliest_due)) : ''}${r.slip_date ? ' · 전표일 ' + esc(String(r.slip_date)) : ''} · 등록 ${pgDate(r.created_at)}</small></div>`).join(''));
   } catch (e) { connErr(e, SB); } }
 let coNames = null; try { const c = JSON.parse(localStorage.getItem('sb-co') || 'null'); if (c && Date.now() - c.at < 864e5 && Array.isArray(c.names)) coNames = c.names; } catch (e) {}
 async function companyTry(q) { if (!mcp) return false; const kw = cleanKw(q); if (!kw.length) return false;
@@ -1099,7 +1099,7 @@ function relay(q) { // call straight from the viewer's tap or Enter: sending to 
   return true; }
 let diagText = '';
 async function diagnose() { setFocus(null); setBusy(true); say('연결 상태를 점검하고 있습니다.', '', null, { quiet: true }); const L = [], add = (k, v) => L.push(k + ': ' + v), tmo = (pr, ms) => Promise.race([pr, new Promise((_, rej) => setTimeout(() => rej({ code: 'timeout' }), ms))]);
-  add('버전', 'r47'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
+  add('버전', 'r48'); add('여는 곳', inClaude ? 'claude.ai 화면' : '파일 또는 다른 주소(연결 기능 없음)'); add('브라우저', navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 110));
   add('Claude에게 넘기기', relayReady() ? '준비됨 (' + (relayCan || '확인 중') + ')' : `안 됨 (댓글 ${cmt ? '있음' : '없음'}, 저장소 ${dbx ? '있음' : '없음'}, 위치 ${relayAnchor ? '있음' : '없음'})`);
   add('연결(mcp)', mcp ? '있음' : '없음'); add('AI(sample)', sampler ? (aiOff ? '거부됨' : '있음' + (aiTools ? ', 도구 사용 가능' : ', 도구 사용 불가')) : '없음'); add('마이크(dictation)', dict ? '있음' : '없음'); add('Claude 음성(tts)', ctts ? '있음' : '없음'); add('기기 음성', 'speechSynthesis' in window ? `있음, 한국어 음성 ${speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)).length}개` : '없음');
   if (perms) { try { const st = await tmo(perms.state(), 6000); Object.entries(st || {}).forEach(([k, v]) => add('권한 ' + k, ({ granted: '허용됨', prompt: '아직 안 물어봄', denied: '거부됨', unavailable: '사용 불가' })[v] || v)); } catch (e) { add('권한 조회', '실패 ' + ((e && e.code) || '')); } } else add('권한', '조회 불가');
@@ -1360,8 +1360,8 @@ function ask(raw) {
   if (/(지금|현재)? ?몇 ?시/.test(q) && q.length <= 14) { const d = new Date(); say(`지금은 ${d.getHours() < 12 ? '오전' : '오후'} ${d.getHours() % 12 || 12}시 ${d.getMinutes()}분입니다.`); return; }
   if (/(오늘|지금).{0,3}(며칠|몇 ?월|무슨 ?요일|날짜)|^(며칠|무슨 ?요일)/.test(q) && q.length <= 16) { const d = new Date(); say(`오늘은 ${d.getMonth() + 1}월 ${d.getDate()}일 ${'일월화수목금토'[d.getDay()]}요일입니다.`); return; }
   if (/(노트|메모|자료|기록).{0,6}(몇 ?개|개수|얼마나 ?(있|쌓))/.test(q)) { const c = k => db.notes.filter(n => n.folder === k).length; say(`노트는 모두 ${db.notes.length}개입니다. 자료 ${c('res')}개, 아이디어 ${c('idea')}개, 업무 기록 ${c('work')}개이고, 잠근 노트는 ${db.notes.filter(n => n.locked).length}개입니다.`, '<div class="jrow"><button class="jact ghost" data-view="vault">보관함에서 묶음별로 보기</button></div>'); return; }
-  if (/스킬.{0,6}(몇 ?개|개수|얼마나)/.test(q)) { say(`대시보드 기준으로 가진 스킬은 ${allSkills().length}개입니다. Claude 계정에 켜져 있는 스킬은 따로 정리해 두었습니다.`, ['cl-skills-on', 'sk-rank', 'sk-used'].map(byId).filter(Boolean).map(n => `<button data-pick="${n.id}"><i style="background:${FOLD[n.folder].color}"></i><b>${esc(n.title)}</b><small>${esc(n.body.slice(0, 80))}</small></button>`).join('')); return; }
-  if (/(가장|제일|많이|자주).{0,8}(쓴|쓰는|사용한|사용하는|썼).{0,4}스킬|스킬.{0,8}(사용 ?횟수|순위|랭킹|많이 ?(쓴|썼))/.test(q) && byId('sk-rank')) { const n = byId('sk-rank'), top = (n.body.match(/^\d\. .+$/gm) || []).slice(0, 3).map(x => x.replace(/^\d\. /, '').replace(/ \(.*$/, '')); say(top.length ? `가장 많이 쓴 스킬은 ${top.join(', ')} 순서입니다. 작업 대화 기록에서 실제로 불러온 횟수를 센 결과입니다.` : `「${n.title}」 노트에 정리해 두었습니다.`, `<div class="jcard"><p>${esc(n.body)}</p></div>`); setFocus(new Set([n.id])); return; }
+  if (/스킬.{0,6}(몇 ?개|개수|얼마나)/.test(q)) { say(`대시보드 기준으로 가진 스킬은 ${allSkills().length}개입니다. Claude 계정에 켜져 있는 스킬은 따로 정리해 두었습니다.`, ['cl-skills-on', 'sk-rank', 'sk-used'].map(byId).filter(Boolean).map(n => `<button data-pick="${n.id}"><i style="background:${FOLD[n.folder].color}"></i><b>${n.locked ? LOCK : ''}${esc(n.title)}</b><small>${isLocked(n) ? '잠긴 노트입니다.' : esc(n.body.slice(0, 80))}</small></button>`).join('')); return; }
+  if (/(가장|제일|많이|자주).{0,8}(쓴|쓰는|사용한|사용하는|썼).{0,4}스킬|스킬.{0,8}(사용 ?횟수|순위|랭킹|많이 ?(쓴|썼))/.test(q) && byId('sk-rank')) { const n = byId('sk-rank'); if (isLocked(n)) return guard(n, () => ask(q)); const top = (n.body.match(/^\d\. .+$/gm) || []).slice(0, 3).map(x => x.replace(/^\d\. /, '').replace(/ \(.*$/, '')); say(top.length ? `가장 많이 쓴 스킬은 ${top.join(', ')} 순서입니다. 작업 대화 기록에서 실제로 불러온 횟수를 센 결과입니다.` : `「${n.title}」 노트에 정리해 두었습니다.`, `<div class="jcard"><p>${esc(n.body)}</p></div>`); setFocus(new Set([n.id])); return; }
   if (/(작업별|작업마다).{0,8}스킬|(무슨|어떤|뭔) ?스킬.{0,4}(썼|쓴|사용했)|스킬 ?(뭐|뭘) ?썼/.test(q) && byId('sk-used')) { pick('sk-used'); return; }
   { const sk = /(뭐야|뭔데|뭐하는|뭐 ?하는|뭐지|설명|어떤 ?스킬|무슨 ?스킬)/.test(q) && allSkills().find(k => k.name.length >= 3 && q.toLowerCase().replace(/[-\s]/g, '').includes(k.name.toLowerCase().replace(/[-\s]/g, ''))); if (sk) { say(`${sk.name}은 ${sk.desc || '설명이 등록되지 않은 스킬'}입니다.${sk.group ? ' 분류는 ' + sk.group + '입니다.' : ''}`); return; } }
   if (/^(출고|출하)$/.test(q)) { shipCheck('출고준비 목록'); return; }
@@ -1392,6 +1392,7 @@ function ask(raw) {
   const wx = /(날씨|기온|미세먼지|(^|\s)(비|눈) ?(와|오|올|내려|온대)|우산|추워|더워|춥|덥)/.test(q);
   if ((wx || /(뉴스|인터넷|(^|\s)웹에서|검색해서|환율|주가|시세)/.test(q)) && !/(메모해|노트|슬랙)/.test(q)) {
     const isW = wx, dn = isW ? byId('day-weather') : /뉴스/.test(q) ? byId('day-news') : null, fresh = dn && new Date(dn.updated).toDateString() === new Date().toDateString();
+    if (dn && isLocked(dn)) return guard(dn, () => ask(q)); // a locked weather or news note is not read out
     let home = ''; try { home = localStorage.getItem('sb-region') || ''; } catch (e) {}
     const place = isW ? tokens(q).filter(t => !/(오늘|내일|모레|이번|주말|날씨|기온|미세먼지|알려|보여|어때|어떄|브리핑|지금|실시간|검색|다시|최신|인터넷|현재|해줘|말해|우리|동네|여기|지역|좀|^뭐$|^비$|^눈$|^와$|^오$|^올$|온대|내려|우산|추워|더워|춥|덥|^많이$)/.test(t)).join(' ') : '', region = isW ? (place || home) : '';
     const covers = !region || (dn && region.split(' ').every(w => dn.body.includes(w)));
