@@ -1,13 +1,14 @@
-"""Merge the three daily collection files into vault-pack.js. Run with python3 -I."""
-import json, os, re, time
-D = os.path.dirname(os.path.abspath(__file__))
+"""Merge the three daily collection files into vault-pack.js.
+Usage: python3 -I tools/daily-merge.py <folder with weather-news.json, cl.json, notes.json> <YYYYMMDD>"""
+import json, os, re, sys, time
+D, DAY = sys.argv[1], sys.argv[2]
 PACK = '/home/user/esu/vault-pack.js'
 raw = open(PACK, encoding='utf8').read()
 i, j = raw.index('{'), raw.rindex('}') + 1
 P = json.loads(raw[i:j])
 by = {n['id']: n for n in P['notes']}
 now = int(time.time() * 1000)
-REV = 20261119
+REV = int(DAY)
 report = []
 SENS = re.compile(r'(01[016789][- ]?\d{3,4}[- ]?\d{4}|0\d{1,2}-\d{3,4}-\d{4}|eyJ[A-Za-z0-9_-]{20,}|192\.168\.\d+\.\d+|127\.0\.0\.1|\b\d{6}-\d{7}\b)')
 
@@ -57,14 +58,14 @@ if nt:
     titles = {n['title'].strip() for n in P['notes']}
     for n in nt.get('notes') or []:
         nid, title, body = str(n.get('id', '')), str(n.get('title', '')).strip(), str(n.get('body', '')).strip()
-        if not re.match(r'^d-20261119-\d\d$', nid) or not title or len(body) < 30:
+        if not re.match(r'^d-' + DAY + r'-\d\d$', nid) or not title or len(body) < 30:
             report.append(f'노트 형식 불량: {nid} {title[:20]}')
             continue
         if SENS.search(body + title):
             report.append(f'{nid}: 전화번호·접속 정보로 보이는 글자가 있어 건너뜀')
             continue
         if title in titles and nid not in by:
-            title = title + ' (11월 19일)'
+            title = title + f' ({int(DAY[4:6])}월 {int(DAY[6:8])}일)'
         rec = {'id': nid, 'folder': n.get('folder') if n.get('folder') in ('res', 'idea', 'work') else 'work', 'title': title,
                'tags': [str(t) for t in (n.get('tags') or [])][:4] or ['KAB'], 'body': body[:900], 'updated': now, 'rev': 2}
         if nid in by:
